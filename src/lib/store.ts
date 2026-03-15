@@ -23,7 +23,11 @@ interface CartStore {
   toggleCart: () => void;
   setCartOpen: (open: boolean) => void;
 
-  checkout: () => Order;
+  /**
+   * Finalizes the order. Claim generation is now the caller's responsibility
+   * (via the VerumProvider). Pass a map of vendorId → claims.
+   */
+  checkout: (vendorClaims: Record<string, VerumClaim[]>) => Order;
   getOrder: (id: string) => Order | undefined;
 
   getCartTotal: () => number;
@@ -79,7 +83,7 @@ export const useCartStore = create<CartStore>()(
       toggleCart: () => set((state) => ({ isCartOpen: !state.isCartOpen })),
       setCartOpen: (open: boolean) => set({ isCartOpen: open }),
 
-      checkout: () => {
+      checkout: (vendorClaims: Record<string, VerumClaim[]>) => {
         const state = get();
         const vendorGroups = state.getItemsByVendor();
         const now = new Date().toISOString();
@@ -88,54 +92,17 @@ export const useCartStore = create<CartStore>()(
         const vendorOrders: VendorOrder[] = [];
 
         vendorGroups.forEach((items, vendorId) => {
-          const vendor = getVendor(vendorId);
           const subtotal = items.reduce(
             (sum, i) => sum + i.product.price * i.quantity,
             0
           );
-
-          const paymentClaim: VerumClaim = {
-            id: `claim-${uuidv4().slice(0, 8)}`,
-            type: "payment.intent",
-            issuer: "did:key:z6MkUniversalCartPlatform",
-            contentHash: `sha256:${uuidv4().replace(/-/g, "")}`,
-            timestamp: now,
-            status: "valid",
-            envelope: {
-              version: "ClaimEnvelopeV1",
-              claimType: "payment.intent",
-              issuer: "did:key:z6MkUniversalCartPlatform",
-              issuedAt: now,
-              contentHash: `sha256:${uuidv4().replace(/-/g, "")}`,
-              dependencies: [],
-              signature: `ed25519:${uuidv4().replace(/-/g, "")}`,
-            },
-          };
-
-          const vendorConfirmClaim: VerumClaim = {
-            id: `claim-${uuidv4().slice(0, 8)}`,
-            type: "vendor.order.confirmed",
-            issuer: vendor?.verumDid || vendorId,
-            contentHash: `sha256:${uuidv4().replace(/-/g, "")}`,
-            timestamp: now,
-            status: "valid",
-            envelope: {
-              version: "ClaimEnvelopeV1",
-              claimType: "vendor.order.confirmed",
-              issuer: vendor?.verumDid || vendorId,
-              issuedAt: now,
-              contentHash: `sha256:${uuidv4().replace(/-/g, "")}`,
-              dependencies: [paymentClaim.contentHash],
-              signature: `ed25519:${uuidv4().replace(/-/g, "")}`,
-            },
-          };
 
           vendorOrders.push({
             vendorId,
             items,
             subtotal,
             status: "confirmed",
-            verumClaims: [paymentClaim, vendorConfirmClaim],
+            verumClaims: vendorClaims[vendorId] ?? [],
           });
         });
 

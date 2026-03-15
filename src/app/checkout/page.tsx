@@ -2,9 +2,12 @@
 
 import { useCartStore } from "@/lib/store";
 import { getVendor } from "@/lib/data";
+import { createOrderClaimChain, getVerumMode, VERUM_MODE_DISPLAY } from "@/lib/verum";
+import type { VerumClaim } from "@/lib/types";
 import Navbar from "@/components/Navbar";
 import CartDrawer from "@/components/CartDrawer";
 import VerumBadge from "@/components/VerumBadge";
+import TrustModeBadge from "@/components/TrustModeBadge";
 import {
   Shield,
   CreditCard,
@@ -12,31 +15,43 @@ import {
   CheckCircle2,
   Loader2,
   Lock,
+  FlaskConical,
 } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
 type CheckoutPhase = "review" | "processing" | "verifying" | "complete";
 
 export default function CheckoutPage() {
-  const router = useRouter();
   const { items, getItemsByVendor, getCartTotal, checkout } = useCartStore();
   const [phase, setPhase] = useState<CheckoutPhase>("review");
   const [order, setOrder] = useState<ReturnType<typeof checkout> | null>(null);
 
   const vendorGroups = getItemsByVendor();
   const total = getCartTotal();
+  const mode = getVerumMode();
+  const isMock = mode === "mock";
 
   const handleCheckout = async () => {
     setPhase("processing");
-    await new Promise((r) => setTimeout(r, 1500));
+    await new Promise((r) => setTimeout(r, 1200));
 
     setPhase("verifying");
-    await new Promise((r) => setTimeout(r, 2000));
 
-    const newOrder = checkout();
+    const vendorClaims: Record<string, VerumClaim[]> = {};
+    const vendorIds = Array.from(vendorGroups.keys());
+
+    for (const vendorId of vendorIds) {
+      const vendor = getVendor(vendorId);
+      const did = vendor?.verumDid ?? vendorId;
+      const orderId = `ord-${vendorId}`;
+      vendorClaims[vendorId] = await createOrderClaimChain(did, orderId);
+    }
+
+    await new Promise((r) => setTimeout(r, 800));
+
+    const newOrder = checkout(vendorClaims);
     setOrder(newOrder);
     setPhase("complete");
   };
@@ -203,18 +218,8 @@ export default function CheckoutPage() {
                       <span className="text-white">${total.toFixed(2)}</span>
                     </div>
 
-                    <div className="mt-4 rounded-xl bg-indigo-500/10 p-3">
-                      <div className="flex items-center gap-2">
-                        <Shield className="h-4 w-4 text-indigo-400" />
-                        <span className="text-xs font-semibold text-indigo-300">
-                          Verum Verification
-                        </span>
-                      </div>
-                      <p className="mt-1 text-[11px] text-indigo-400/70 leading-relaxed">
-                        Each vendor order will generate a cryptographic claim
-                        chain: payment intent → vendor confirmation →
-                        fulfillment → delivery.
-                      </p>
+                    <div className="mt-4">
+                      <TrustModeBadge />
                     </div>
 
                     <button
@@ -265,14 +270,27 @@ export default function CheckoutPage() {
                 <h2 className="text-xl font-bold text-white">
                   {phase === "processing"
                     ? "Processing Payment"
-                    : "Generating Verum Claims"}
+                    : isMock
+                      ? "Generating Simulated Claims"
+                      : "Generating Verum Claims"}
                 </h2>
                 <p className="mt-2 text-sm text-zinc-500">
                   {phase === "processing"
                     ? "Splitting payment across vendors..."
-                    : "Signing claim envelopes for each vendor order..."}
+                    : isMock
+                      ? "Creating simulated claim envelopes for each vendor order..."
+                      : `Signing claim envelopes via ${VERUM_MODE_DISPLAY[mode].label}...`}
                 </p>
               </div>
+
+              {isMock && phase === "verifying" && (
+                <div className="flex items-center gap-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 px-3 py-2">
+                  <FlaskConical className="h-3.5 w-3.5 text-amber-400" />
+                  <span className="text-xs text-amber-300">
+                    Mock mode — claims are simulated, not cryptographically signed
+                  </span>
+                </div>
+              )}
 
               <div className="flex flex-col gap-2 w-full max-w-sm">
                 {Array.from(vendorGroups.entries()).map(
@@ -337,6 +355,10 @@ export default function CheckoutPage() {
                 <p className="mt-1 text-sm text-zinc-500">
                   Order {order.id} — ${order.total.toFixed(2)}
                 </p>
+              </div>
+
+              <div className="w-full max-w-md">
+                <TrustModeBadge />
               </div>
 
               <div className="w-full max-w-md rounded-2xl border border-white/[0.06] bg-zinc-900/40 p-5">

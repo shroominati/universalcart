@@ -1,17 +1,25 @@
 "use client";
 
 import { VerumClaim } from "@/lib/types";
-import { CLAIM_TYPE_LABELS, CLAIM_TYPE_DESCRIPTIONS } from "@/lib/verum";
+import {
+  CLAIM_TYPE_LABELS,
+  CLAIM_TYPE_DESCRIPTIONS,
+  getVerumMode,
+} from "@/lib/verum";
 import {
   CheckCircle2,
   Clock,
   XCircle,
   Shield,
   Link as LinkIcon,
+  FlaskConical,
 } from "lucide-react";
 import { motion } from "framer-motion";
 
 export default function OrderTimeline({ claims }: { claims: VerumClaim[] }) {
+  const mode = getVerumMode();
+  const isMock = mode === "mock";
+
   return (
     <div className="relative">
       <div className="absolute left-[19px] top-0 h-full w-px bg-gradient-to-b from-indigo-500/40 via-indigo-500/20 to-transparent" />
@@ -41,7 +49,11 @@ export default function OrderTimeline({ claims }: { claims: VerumClaim[] }) {
               className="relative flex gap-4 pl-0"
             >
               <div className="relative z-10 flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full border border-white/10 bg-zinc-900">
-                <Shield className={`h-4 w-4 ${statusColor}`} />
+                {isMock ? (
+                  <FlaskConical className={`h-4 w-4 text-amber-400/70`} />
+                ) : (
+                  <Shield className={`h-4 w-4 ${statusColor}`} />
+                )}
               </div>
 
               <div className="flex-1 rounded-xl border border-white/[0.06] bg-zinc-900/50 p-4">
@@ -51,6 +63,11 @@ export default function OrderTimeline({ claims }: { claims: VerumClaim[] }) {
                       {CLAIM_TYPE_LABELS[claim.type]}
                     </span>
                     <StatusIcon className={`h-3.5 w-3.5 ${statusColor}`} />
+                    {isMock && (
+                      <span className="text-[10px] font-medium text-amber-400/60">
+                        sim
+                      </span>
+                    )}
                   </div>
                   <span className="text-[11px] text-zinc-600">
                     {new Date(claim.timestamp).toLocaleTimeString()}

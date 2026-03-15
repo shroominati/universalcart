@@ -2,26 +2,160 @@
 
 **Shop everywhere. Checkout once.**
 
-A multi-vendor shopping platform where you add items from multiple stores into a single cart and process everything in one transaction. Every step — payment, vendor confirmation, fulfillment, delivery — is cryptographically signed and verified through the [Verum protocol](https://github.com/your-org/verum).
+A multi-vendor shopping platform where you add items from multiple stores into a single cart and process everything in one transaction. Every step — payment, vendor confirmation, fulfillment, delivery — is tracked through a pluggable Verum protocol adapter.
 
-## How It Works
+## Quick Start
 
-1. **Browse** products from 6 vendors across electronics, fashion, home, grocery, sports, and beauty
-2. **Add to cart** from any combination of vendors — everything goes into one universal cart
-3. **Checkout once** — the platform splits your order and routes sub-orders to each vendor
-4. **Verum verifies** each step: a claim chain of signed envelopes proves payment was captured, vendors confirmed, items shipped, and delivery completed
+```bash
+npm install
+npm run dev
+```
 
-## Verum Integration
+Open [http://localhost:3000](http://localhost:3000).
+
+## Verum Integration Modes
+
+UniversalCart runs in three modes, controlled by the `NEXT_PUBLIC_VERUM_MODE` environment variable:
+
+| Mode | Default | Runtime Dependency | Description |
+|------|---------|-------------------|-------------|
+| `mock` | Yes | None | Claims simulated locally. No Verum binary or server needed. |
+| `cli` | No | `verum` binary on PATH | Shells out to `verum-cli` for claim operations. Falls back to mock if unavailable. |
+| `mcp` | No | `verum-mcp-server` running | Connects to Verum MCP server. Falls back to mock if unreachable. |
+
+### Switching Modes
+
+Edit `.env.local`:
+
+```bash
+# Mock mode (default, zero dependencies)
+NEXT_PUBLIC_VERUM_MODE=mock
+
+# CLI mode (requires verum binary)
+NEXT_PUBLIC_VERUM_MODE=cli
+VERUM_CLI_PATH=/path/to/verum    # optional, defaults to "verum"
+
+# MCP mode (requires verum-mcp-server)
+NEXT_PUBLIC_VERUM_MODE=mcp
+VERUM_MCP_HOST=localhost          # optional, defaults to localhost
+VERUM_MCP_PORT=3100               # optional, defaults to 3100
+```
+
+The current mode is visible in the UI:
+- **Navbar** shows the active mode badge (Simulated / Verum CLI / Verum MCP)
+- **Checkout** labels claims as simulated or cryptographically signed
+- **Orders** timeline distinguishes simulated vs verified claims
+- **Cart drawer** shows mode-aware messaging
+
+### Graceful Fallback
+
+If CLI or MCP mode is enabled but the runtime is unavailable:
+1. The provider logs a warning to the console
+2. Operations fall back to mock mode automatically
+3. The app continues to work — no crash, no broken UI
+4. Claims generated during fallback have the same structure as mock claims
+
+## Architecture
+
+### Verum Adapter Boundary
+
+All Verum interaction goes through `src/lib/verum/`:
+
+```
+src/lib/verum/
+├── index.ts        # Public API: getVerumProvider(), convenience functions, re-exports
+├── provider.ts     # VerumProvider interface + shared types
+├── config.ts       # Mode selection from environment
+├── mock.ts         # MockVerumProvider — pure JS, no I/O
+├── cli.ts          # CliVerumProvider — shells out to verum binary (server-only)
+└── mcp.ts          # McpVerumProvider — connects to verum-mcp-server (server-only)
+```
+
+The provider interface:
+
+```typescript
+interface VerumProvider {
+  readonly mode: "mock" | "cli" | "mcp";
+  createOrderClaimChain(req: CreateClaimChainRequest): Promise<VerumClaim[]>;
+  verifyClaim(claim: VerumClaim): Promise<ClaimVerificationResult>;
+  verifyClaimChain(claims: VerumClaim[]): Promise<ChainVerificationResult>;
+}
+```
+
+### Claim Chain Model
 
 Each vendor order generates a Verum `ClaimEnvelopeV1` chain:
 
 ```
-payment.intent (platform key) → vendor.order.confirmed (vendor key) → fulfillment.acknowledged (vendor key) → delivery.confirmed (platform key)
+payment.intent (platform key) → vendor.order.confirmed (vendor key)
 ```
 
-- Claims are Ed25519-attested with content-hash dependencies
-- Verification walks the DAG and checks signatures, timestamps, and chain integrity
-- The `/api/verum` endpoint exposes claim creation and verification
+Extended chain (fulfillment/delivery added as order progresses):
+
+```
+payment.intent → vendor.order.confirmed → fulfillment.acknowledged → delivery.confirmed
+```
+
+### Data Flow
+
+1. **Checkout page** calls `createOrderClaimChain()` for each vendor
+2. Claims are passed to the store's `checkout(vendorClaims)` method
+3. Store creates the order with claims attached to each vendor sub-order
+4. **Orders page** calls `verifyClaimChain()` to verify the claim DAG
+5. UI components read mode via `getVerumMode()` and render accordingly
+
+## Project Structure
+
+```
+src/
+├── app/
+│   ├── page.tsx              # Storefront with hero, vendor showcase, product grid
+│   ├── checkout/page.tsx     # Multi-phase checkout with provider-driven claims
+│   ├── orders/page.tsx       # Order history with verification timeline
+│   ├── vendors/page.tsx      # Individual vendor pages
+│   └── api/
+│       ├── verum/route.ts    # Verum provider operations (server-side)
+│       ├── checkout/route.ts # Server-side checkout orchestration
+│       └── orders/route.ts   # Order persistence (placeholder)
+├── components/
+│   ├── Navbar.tsx            # Navigation with mode badge
+│   ├── ProductCard.tsx       # Product display with vendor badge
+│   ├── CartDrawer.tsx        # Slide-out cart with mode messaging
+│   ├── VendorFilter.tsx      # Vendor filter pills
+│   ├── VendorBadge.tsx       # Vendor identity chip
+│   ├── VerumBadge.tsx        # Claim status with mock/real indicator
+│   ├── OrderTimeline.tsx     # Verum claim chain visualization
+│   └── TrustModeBadge.tsx    # Mode indicator component
+└── lib/
+    ├── types.ts              # TypeScript interfaces
+    ├── data.ts               # Mock vendors and products
+    ├── store.ts              # Zustand store (cart, orders)
+    └── verum/                # ← Verum adapter boundary
+        ├── index.ts
+        ├── provider.ts
+        ├── config.ts
+        ├── mock.ts
+        ├── cli.ts
+        └── mcp.ts
+```
+
+## Testing
+
+```bash
+npm test          # run all tests
+npm run test:watch # watch mode
+```
+
+Tests cover:
+- MockVerumProvider: claim creation, structure validity, chain verification, dependency detection
+- CliVerumProvider: graceful fallback when binary unavailable, claim structure after fallback
+- McpVerumProvider: graceful fallback when server unreachable, claim structure after fallback
+- Provider interface contract: all providers satisfy the same behavioral contract
+- Config: mode selection defaults, env var reading, invalid mode fallback
+
+## Verum Interface Gaps
+
+See [VERUM_INTERFACE_GAPS.md](./VERUM_INTERFACE_GAPS.md) for exact gaps between UniversalCart's needs and Verum's current CLI/MCP surface. These are documented without patching Verum.
 
 ## Tech Stack
 
@@ -31,59 +165,4 @@ payment.intent (platform key) → vendor.order.confirmed (vendor key) → fulfil
 - **Zustand** (client state with persistence)
 - **Framer Motion** (animations)
 - **Lucide React** (icons)
-
-## Getting Started
-
-```bash
-npm install
-npm run dev
-```
-
-Open [http://localhost:3000](http://localhost:3000).
-
-## Project Structure
-
-```
-src/
-├── app/
-│   ├── page.tsx              # Storefront with hero, vendor showcase, product grid
-│   ├── checkout/page.tsx     # Multi-phase checkout with Verum claim generation
-│   ├── orders/page.tsx       # Order history with verification timeline
-│   ├── vendors/page.tsx      # Individual vendor pages
-│   └── api/
-│       ├── verum/route.ts    # Verum claim CRUD and verification
-│       ├── checkout/route.ts # Server-side checkout orchestration
-│       └── orders/route.ts   # Order persistence (placeholder)
-├── components/
-│   ├── Navbar.tsx            # Navigation with cart badge
-│   ├── ProductCard.tsx       # Product display with vendor badge
-│   ├── CartDrawer.tsx        # Slide-out cart grouped by vendor
-│   ├── VendorFilter.tsx      # Vendor filter pills
-│   ├── VendorBadge.tsx       # Vendor identity chip
-│   ├── VerumBadge.tsx        # Claim status indicator
-│   └── OrderTimeline.tsx     # Verum claim chain visualization
-└── lib/
-    ├── types.ts              # TypeScript interfaces
-    ├── data.ts               # Mock vendors and products
-    ├── store.ts              # Zustand store (cart, orders)
-    └── verum.ts              # Verum protocol integration layer
-```
-
-## Connecting to Real Verum
-
-The `src/lib/verum.ts` module simulates Verum cryptographic operations with matching data shapes. To connect to the real Verum CLI:
-
-```bash
-# Install verum-cli from the Verum repo
-cargo install --path /path/to/verum/crates/verum-cli
-
-# The verum.ts module can shell out to:
-verum step request -o claim.json --secret-key platform.key
-verum verify-chain ./chain --trust-policy policy.json
-```
-
-Or connect to the MCP server for agent-to-agent verification:
-
-```bash
-verum-mcp-server --trust-policy config/trust-policy.json
-```
+- **Vitest** (testing)

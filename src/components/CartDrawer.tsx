@@ -2,9 +2,10 @@
 
 import { useCartStore } from "@/lib/store";
 import { getVendor } from "@/lib/data";
-import { X, Minus, Plus, Trash2, ArrowRight, Shield } from "lucide-react";
+import { X, Minus, Plus, Trash2, ArrowRight, Shield, FlaskConical } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
+import { getVerumMode, VERUM_MODE_DISPLAY } from "@/lib/verum";
 
 export default function CartDrawer() {
   const {
@@ -19,6 +20,8 @@ export default function CartDrawer() {
 
   const vendorGroups = getItemsByVendor();
   const total = getCartTotal();
+  const mode = getVerumMode();
+  const isMock = mode === "mock";
 
   return (
     <AnimatePresence>
@@ -172,10 +175,24 @@ export default function CartDrawer() {
                     ${total.toFixed(2)}
                   </span>
                 </div>
-                <div className="mb-3 flex items-center gap-1.5 rounded-lg bg-indigo-500/10 px-3 py-2">
-                  <Shield className="h-3.5 w-3.5 text-indigo-400" />
-                  <span className="text-xs text-indigo-300">
-                    Verified by Verum — cryptographic proof for every step
+                <div
+                  className={`mb-3 flex items-center gap-1.5 rounded-lg px-3 py-2 ${
+                    isMock
+                      ? "bg-amber-500/10 border border-amber-500/20"
+                      : "bg-indigo-500/10"
+                  }`}
+                >
+                  {isMock ? (
+                    <FlaskConical className="h-3.5 w-3.5 text-amber-400" />
+                  ) : (
+                    <Shield className="h-3.5 w-3.5 text-indigo-400" />
+                  )}
+                  <span
+                    className={`text-xs ${isMock ? "text-amber-300" : "text-indigo-300"}`}
+                  >
+                    {isMock
+                      ? "Simulated mode — claims will be locally generated"
+                      : `${VERUM_MODE_DISPLAY[mode].label} — cryptographic proof for every step`}
                   </span>
                 </div>
                 <Link

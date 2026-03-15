@@ -1,8 +1,8 @@
 "use client";
 
-import { Shield, CheckCircle2, Clock, XCircle } from "lucide-react";
+import { Shield, CheckCircle2, Clock, XCircle, FlaskConical } from "lucide-react";
 import { VerumClaim } from "@/lib/types";
-import { CLAIM_TYPE_LABELS } from "@/lib/verum";
+import { CLAIM_TYPE_LABELS, getVerumMode } from "@/lib/verum";
 
 export default function VerumBadge({
   claim,
@@ -11,13 +11,16 @@ export default function VerumBadge({
   claim: VerumClaim;
   compact?: boolean;
 }) {
+  const mode = getVerumMode();
+  const isMock = mode === "mock";
+
   const statusConfig = {
     valid: {
       icon: CheckCircle2,
       color: "text-emerald-400",
       bg: "bg-emerald-500/10",
       border: "border-emerald-500/20",
-      label: "Verified",
+      label: isMock ? "Simulated" : "Verified",
     },
     pending: {
       icon: Clock,
@@ -43,6 +46,7 @@ export default function VerumBadge({
       <div
         className={`inline-flex items-center gap-1 rounded-md ${config.bg} px-2 py-0.5`}
       >
+        {isMock && <FlaskConical className="h-2.5 w-2.5 text-amber-400/60" />}
         <StatusIcon className={`h-3 w-3 ${config.color}`} />
         <span className={`text-[10px] font-semibold ${config.color}`}>
           {config.label}
@@ -65,6 +69,9 @@ export default function VerumBadge({
               {CLAIM_TYPE_LABELS[claim.type]}
             </span>
             <div className="flex items-center gap-1">
+              {isMock && (
+                <FlaskConical className="h-3 w-3 text-amber-400/60" />
+              )}
               <StatusIcon className={`h-3 w-3 ${config.color}`} />
               <span className={`text-[10px] font-semibold ${config.color}`}>
                 {config.label}

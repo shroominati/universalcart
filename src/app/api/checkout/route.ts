@@ -1,30 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
-import {
-  createPaymentIntentClaim,
-  createVendorConfirmClaim,
-} from "@/lib/verum";
+import { getVerumProvider } from "@/lib/verum";
 import { getVendor } from "@/lib/data";
 
 export async function POST(req: NextRequest) {
   const { vendorIds } = (await req.json()) as { vendorIds: string[] };
+  const provider = getVerumProvider();
 
-  const results = vendorIds.map((vendorId) => {
-    const vendor = getVendor(vendorId);
-    if (!vendor) {
-      return { vendorId, error: "Vendor not found" };
-    }
+  const results = await Promise.all(
+    vendorIds.map(async (vendorId) => {
+      const vendor = getVendor(vendorId);
+      if (!vendor) {
+        return { vendorId, error: "Vendor not found", claims: [] };
+      }
 
-    const paymentClaim = createPaymentIntentClaim();
-    const vendorConfirm = createVendorConfirmClaim(
-      vendor.verumDid,
-      paymentClaim.contentHash
-    );
+      const claims = await provider.createOrderClaimChain({
+        vendorDid: vendor.verumDid,
+        orderId: `order-${vendorId}`,
+      });
 
-    return {
-      vendorId,
-      claims: [paymentClaim, vendorConfirm],
-    };
+      return { vendorId, claims };
+    })
+  );
+
+  return NextResponse.json({
+    vendorOrders: results,
+    mode: provider.mode,
   });
-
-  return NextResponse.json({ vendorOrders: results });
 }

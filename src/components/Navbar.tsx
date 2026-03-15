@@ -1,15 +1,32 @@
 "use client";
 
 import Link from "next/link";
-import { ShoppingCart, Package, Shield, Menu, X } from "lucide-react";
+import { ShoppingCart, Package, Shield, Menu, X, FlaskConical, Terminal, Radio } from "lucide-react";
 import { useCartStore } from "@/lib/store";
+import { getVerumMode, VERUM_MODE_DISPLAY } from "@/lib/verum";
+import type { VerumMode } from "@/lib/verum";
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+
+const modeIcons: Record<VerumMode, typeof Shield> = {
+  mock: FlaskConical,
+  cli: Terminal,
+  mcp: Radio,
+};
+
+const modeColors: Record<VerumMode, string> = {
+  mock: "text-amber-400 bg-amber-500/10",
+  cli: "text-emerald-400 bg-emerald-500/10",
+  mcp: "text-indigo-400 bg-indigo-500/10",
+};
 
 export default function Navbar() {
   const { getCartCount, toggleCart } = useCartStore();
   const [mobileOpen, setMobileOpen] = useState(false);
   const count = getCartCount();
+  const mode = getVerumMode();
+  const display = VERUM_MODE_DISPLAY[mode];
+  const ModeIcon = modeIcons[mode];
 
   return (
     <nav className="sticky top-0 z-50 border-b border-white/10 bg-zinc-950/80 backdrop-blur-xl">
@@ -37,9 +54,12 @@ export default function Navbar() {
             <Package className="h-4 w-4" />
             Orders
           </Link>
-          <div className="ml-1 flex items-center gap-1.5 rounded-lg bg-indigo-500/10 px-3 py-2 text-sm font-medium text-indigo-400">
-            <Shield className="h-4 w-4" />
-            Verum Verified
+          <div
+            className={`ml-1 flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium ${modeColors[mode]}`}
+            title={display.description}
+          >
+            <ModeIcon className="h-4 w-4" />
+            {display.label}
           </div>
         </div>
 
@@ -100,6 +120,12 @@ export default function Navbar() {
                 <Package className="h-4 w-4" />
                 Orders
               </Link>
+              <div
+                className={`flex items-center gap-1.5 rounded-lg px-3 py-2.5 text-sm font-medium ${modeColors[mode]}`}
+              >
+                <ModeIcon className="h-4 w-4" />
+                {display.label}
+              </div>
             </div>
           </motion.div>
         )}
