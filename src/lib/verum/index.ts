@@ -13,10 +13,13 @@ export {
   CLAIM_TYPE_LABELS,
   CLAIM_TYPE_DESCRIPTIONS,
   type VerumProvider,
+  type VerumProviderCapabilities,
   type VerumMode,
   type VerificationCheck,
   type ClaimVerificationResult,
   type ChainVerificationResult,
+  type ClaimInspectionResult,
+  type OrderClaimChainResult,
   type CreateClaimChainRequest,
 } from "./provider";
 
@@ -49,8 +52,6 @@ export function getVerumProvider(): VerumProvider {
 
   switch (mode) {
     case "cli": {
-      // Dynamic import avoided — cli.ts uses top-level await-compatible code
-      // but we lazy-construct to keep the module tree clean.
       const { CliVerumProvider } = require("./cli") as typeof import("./cli");
       _cachedProvider = new CliVerumProvider();
       break;
@@ -80,25 +81,38 @@ export function resetProviderCache(): void {
 // ---------------------------------------------------------------------------
 
 import { VerumClaim } from "../types";
+import type {
+  OrderClaimChainResult,
+  ChainVerificationResult,
+  ClaimVerificationResult,
+  ClaimInspectionResult,
+} from "./provider";
 
 export async function createOrderClaimChain(
   vendorDid: string,
   orderId: string
-): Promise<VerumClaim[]> {
+): Promise<OrderClaimChainResult> {
   const provider = getVerumProvider();
   return provider.createOrderClaimChain({ vendorDid, orderId });
 }
 
 export async function verifyClaimChain(
   claims: VerumClaim[]
-): Promise<import("./provider").ChainVerificationResult> {
+): Promise<ChainVerificationResult> {
   const provider = getVerumProvider();
   return provider.verifyClaimChain(claims);
 }
 
 export async function verifyClaim(
   claim: VerumClaim
-): Promise<import("./provider").ClaimVerificationResult> {
+): Promise<ClaimVerificationResult> {
   const provider = getVerumProvider();
   return provider.verifyClaim(claim);
+}
+
+export async function inspectClaim(
+  claim: VerumClaim
+): Promise<ClaimInspectionResult> {
+  const provider = getVerumProvider();
+  return provider.inspectClaim(claim);
 }

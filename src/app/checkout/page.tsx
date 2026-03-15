@@ -4,10 +4,12 @@ import { useCartStore } from "@/lib/store";
 import { getVendor } from "@/lib/data";
 import { createOrderClaimChain, getVerumMode, VERUM_MODE_DISPLAY } from "@/lib/verum";
 import type { VerumClaim } from "@/lib/types";
+import type { OrderClaimChainResult } from "@/lib/verum";
 import Navbar from "@/components/Navbar";
 import CartDrawer from "@/components/CartDrawer";
 import VerumBadge from "@/components/VerumBadge";
-import TrustModeBadge from "@/components/TrustModeBadge";
+import TrustModePanel from "@/components/TrustModePanel";
+import ClaimInspectDrawer from "@/components/ClaimInspectDrawer";
 import {
   Shield,
   CreditCard,
@@ -27,11 +29,14 @@ export default function CheckoutPage() {
   const { items, getItemsByVendor, getCartTotal, checkout } = useCartStore();
   const [phase, setPhase] = useState<CheckoutPhase>("review");
   const [order, setOrder] = useState<ReturnType<typeof checkout> | null>(null);
+  const [inspectingClaim, setInspectingClaim] = useState<VerumClaim | null>(null);
 
   const vendorGroups = getItemsByVendor();
   const total = getCartTotal();
   const mode = getVerumMode();
   const isMock = mode === "mock";
+
+  const [claimWarnings, setClaimWarnings] = useState<string[]>([]);
 
   const handleCheckout = async () => {
     setPhase("processing");
@@ -40,15 +45,19 @@ export default function CheckoutPage() {
     setPhase("verifying");
 
     const vendorClaims: Record<string, VerumClaim[]> = {};
+    const allWarnings: string[] = [];
     const vendorIds = Array.from(vendorGroups.keys());
 
     for (const vendorId of vendorIds) {
       const vendor = getVendor(vendorId);
       const did = vendor?.verumDid ?? vendorId;
       const orderId = `ord-${vendorId}`;
-      vendorClaims[vendorId] = await createOrderClaimChain(did, orderId);
+      const result: OrderClaimChainResult = await createOrderClaimChain(did, orderId);
+      vendorClaims[vendorId] = result.claims;
+      allWarnings.push(...result.warnings);
     }
 
+    setClaimWarnings(allWarnings);
     await new Promise((r) => setTimeout(r, 800));
 
     const newOrder = checkout(vendorClaims);
@@ -85,6 +94,10 @@ export default function CheckoutPage() {
     <div className="min-h-screen bg-zinc-950">
       <Navbar />
       <CartDrawer />
+      <ClaimInspectDrawer
+        claim={inspectingClaim}
+        onClose={() => setInspectingClaim(null)}
+      />
 
       <div className="mx-auto max-w-4xl px-4 py-10 sm:px-6">
         <AnimatePresence mode="wait">
@@ -180,7 +193,7 @@ export default function CheckoutPage() {
                   )}
                 </div>
 
-                <div className="lg:sticky lg:top-24 h-fit">
+                <div className="lg:sticky lg:top-24 h-fit flex flex-col gap-4">
                   <div className="rounded-2xl border border-white/[0.06] bg-zinc-900/40 p-5">
                     <h3 className="text-sm font-semibold text-white mb-4">
                       Order Summary
@@ -218,10 +231,6 @@ export default function CheckoutPage() {
                       <span className="text-white">${total.toFixed(2)}</span>
                     </div>
 
-                    <div className="mt-4">
-                      <TrustModeBadge />
-                    </div>
-
                     <button
                       onClick={handleCheckout}
                       className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-500 py-3.5 text-sm font-semibold text-white transition-colors hover:bg-indigo-400"
@@ -234,6 +243,8 @@ export default function CheckoutPage() {
                       Orders are split and routed to each vendor automatically
                     </p>
                   </div>
+
+                  <TrustModePanel />
                 </div>
               </div>
             </motion.div>
@@ -358,14 +369,40 @@ export default function CheckoutPage() {
               </div>
 
               <div className="w-full max-w-md">
-                <TrustModeBadge />
+                <TrustModePanel />
               </div>
 
+              {claimWarnings.length > 0 && (
+                <div className="w-full max-w-md rounded-xl border border-amber-500/20 bg-amber-500/5 p-3">
+                  <div className="flex items-center gap-2 mb-2">
+                    <FlaskConical className="h-3.5 w-3.5 text-amber-400" />
+                    <span className="text-xs font-semibold text-amber-300">
+                      Degradation Notices
+                    </span>
+                  </div>
+                  <ul className="flex flex-col gap-1">
+                    {[...new Set(claimWarnings)].map((w, i) => (
+                      <li
+                        key={i}
+                        className="text-[11px] text-amber-200/70 leading-relaxed"
+                      >
+                        {w}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
               <div className="w-full max-w-md rounded-2xl border border-white/[0.06] bg-zinc-900/40 p-5">
-                <div className="flex items-center gap-2 mb-4">
-                  <Shield className="h-4 w-4 text-indigo-400" />
-                  <span className="text-sm font-semibold text-white">
-                    Verum Claim Chain
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <Shield className="h-4 w-4 text-indigo-400" />
+                    <span className="text-sm font-semibold text-white">
+                      Verum Claim Chain
+                    </span>
+                  </div>
+                  <span className="text-[10px] text-zinc-600">
+                    Click any claim to inspect
                   </span>
                 </div>
 
@@ -382,7 +419,11 @@ export default function CheckoutPage() {
                           </span>
                         </div>
                         {vo.verumClaims.map((claim) => (
-                          <VerumBadge key={claim.id} claim={claim} />
+                          <VerumBadge
+                            key={claim.id}
+                            claim={claim}
+                            onInspect={setInspectingClaim}
+                          />
                         ))}
                       </div>
                     );

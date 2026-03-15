@@ -1,15 +1,17 @@
 "use client";
 
-import { Shield, CheckCircle2, Clock, XCircle, FlaskConical } from "lucide-react";
+import { Shield, CheckCircle2, Clock, XCircle, FlaskConical, FileSearch } from "lucide-react";
 import { VerumClaim } from "@/lib/types";
 import { CLAIM_TYPE_LABELS, getVerumMode } from "@/lib/verum";
 
 export default function VerumBadge({
   claim,
   compact = false,
+  onInspect,
 }: {
   claim: VerumClaim;
   compact?: boolean;
+  onInspect?: (claim: VerumClaim) => void;
 }) {
   const mode = getVerumMode();
   const isMock = mode === "mock";
@@ -40,11 +42,15 @@ export default function VerumBadge({
 
   const config = statusConfig[claim.status];
   const StatusIcon = config.icon;
+  const clickable = !!onInspect;
 
   if (compact) {
     return (
       <div
-        className={`inline-flex items-center gap-1 rounded-md ${config.bg} px-2 py-0.5`}
+        onClick={() => onInspect?.(claim)}
+        className={`inline-flex items-center gap-1 rounded-md ${config.bg} px-2 py-0.5 ${
+          clickable ? "cursor-pointer hover:brightness-125 transition-all" : ""
+        }`}
       >
         {isMock && <FlaskConical className="h-2.5 w-2.5 text-amber-400/60" />}
         <StatusIcon className={`h-3 w-3 ${config.color}`} />
@@ -57,7 +63,12 @@ export default function VerumBadge({
 
   return (
     <div
-      className={`rounded-xl border ${config.border} ${config.bg} p-3`}
+      onClick={() => onInspect?.(claim)}
+      className={`rounded-xl border ${config.border} ${config.bg} p-3 ${
+        clickable
+          ? "cursor-pointer transition-all hover:border-indigo-500/30 hover:bg-white/[0.03] group"
+          : ""
+      }`}
     >
       <div className="flex items-start gap-3">
         <div className={`mt-0.5 rounded-lg ${config.bg} p-1.5`}>
@@ -77,6 +88,12 @@ export default function VerumBadge({
                 {config.label}
               </span>
             </div>
+            {clickable && (
+              <span className="ml-auto hidden group-hover:inline-flex items-center gap-1 text-[10px] text-indigo-400">
+                <FileSearch className="h-3 w-3" />
+                Inspect
+              </span>
+            )}
           </div>
           <p className="mt-0.5 text-[11px] text-zinc-500 truncate">
             {claim.contentHash}

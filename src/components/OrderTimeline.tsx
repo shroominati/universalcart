@@ -13,10 +13,17 @@ import {
   Shield,
   Link as LinkIcon,
   FlaskConical,
+  FileSearch,
 } from "lucide-react";
 import { motion } from "framer-motion";
 
-export default function OrderTimeline({ claims }: { claims: VerumClaim[] }) {
+export default function OrderTimeline({
+  claims,
+  onClaimClick,
+}: {
+  claims: VerumClaim[];
+  onClaimClick?: (claim: VerumClaim) => void;
+}) {
   const mode = getVerumMode();
   const isMock = mode === "mock";
 
@@ -40,6 +47,8 @@ export default function OrderTimeline({ claims }: { claims: VerumClaim[] }) {
                 ? "text-amber-400"
                 : "text-red-400";
 
+          const clickable = !!onClaimClick;
+
           return (
             <motion.div
               key={claim.id}
@@ -56,7 +65,14 @@ export default function OrderTimeline({ claims }: { claims: VerumClaim[] }) {
                 )}
               </div>
 
-              <div className="flex-1 rounded-xl border border-white/[0.06] bg-zinc-900/50 p-4">
+              <div
+                onClick={() => onClaimClick?.(claim)}
+                className={`flex-1 rounded-xl border border-white/[0.06] bg-zinc-900/50 p-4 ${
+                  clickable
+                    ? "cursor-pointer transition-colors hover:border-indigo-500/30 hover:bg-zinc-900/70 group"
+                    : ""
+                }`}
+              >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-semibold text-white">
@@ -69,9 +85,17 @@ export default function OrderTimeline({ claims }: { claims: VerumClaim[] }) {
                       </span>
                     )}
                   </div>
-                  <span className="text-[11px] text-zinc-600">
-                    {new Date(claim.timestamp).toLocaleTimeString()}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    {clickable && (
+                      <span className="hidden group-hover:inline-flex items-center gap-1 rounded bg-indigo-500/10 px-2 py-0.5 text-[10px] font-medium text-indigo-400 transition-opacity">
+                        <FileSearch className="h-3 w-3" />
+                        Inspect
+                      </span>
+                    )}
+                    <span className="text-[11px] text-zinc-600">
+                      {new Date(claim.timestamp).toLocaleTimeString()}
+                    </span>
+                  </div>
                 </div>
 
                 <p className="mt-1 text-xs text-zinc-400">

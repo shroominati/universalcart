@@ -1,21 +1,13 @@
 "use client";
 
-import { useState } from "react";
-import { products, vendors } from "@/lib/data";
-import ProductCard from "@/components/ProductCard";
-import VendorFilter from "@/components/VendorFilter";
+import { vendors, getProductsByVendor } from "@/lib/data";
 import Navbar from "@/components/Navbar";
 import CartDrawer from "@/components/CartDrawer";
-import { Shield, Zap, Store, CreditCard } from "lucide-react";
+import { Shield, Zap, Store, CreditCard, ArrowRight, Star, ExternalLink } from "lucide-react";
 import { motion } from "framer-motion";
+import Link from "next/link";
 
 export default function Home() {
-  const [selectedVendor, setSelectedVendor] = useState<string | null>(null);
-
-  const filtered = selectedVendor
-    ? products.filter((p) => p.vendorId === selectedVendor)
-    : products;
-
   return (
     <div className="min-h-screen bg-zinc-950">
       <Navbar />
@@ -44,10 +36,9 @@ export default function Home() {
               </span>
             </h1>
             <p className="mt-5 text-lg leading-relaxed text-zinc-400">
-              Add items from multiple vendors into a single cart and process
-              everything in one shot. Every transaction step is cryptographically
-              signed and verified through the Verum protocol — no trust
-              required, only proof.
+              Visit different stores, add items to one universal cart, and check
+              out in a single transaction. Every order step produces a typed
+              claim envelope you can inspect.
             </p>
           </motion.div>
 
@@ -60,18 +51,18 @@ export default function Home() {
             {[
               {
                 icon: Store,
-                title: "Multi-Vendor Cart",
-                desc: "Browse products from 6+ vendors. One cart holds them all.",
+                title: "Visit Stores",
+                desc: "Browse 6 independent vendors. Each has its own identity, catalog, and brand.",
               },
               {
                 icon: CreditCard,
-                title: "Single Checkout",
-                desc: "Pay once. We split and route orders to each vendor automatically.",
+                title: "One Cart, One Checkout",
+                desc: "Add from any store. Pay once. Orders split and route to each vendor.",
               },
               {
                 icon: Zap,
-                title: "Verum Verified",
-                desc: "Every step — payment, confirmation, fulfillment — is a signed claim.",
+                title: "Claim-Tracked",
+                desc: "Payment, confirmation, fulfillment — each step is a typed, inspectable claim envelope.",
               },
             ].map((card) => (
               <div
@@ -91,68 +82,85 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Vendor Showcase */}
-      <section className="border-b border-white/5">
-        <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6">
-          <h2 className="mb-5 text-sm font-semibold uppercase tracking-wider text-zinc-500">
-            Featured Vendors
-          </h2>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-            {vendors.map((vendor) => (
-              <button
-                key={vendor.id}
-                onClick={() =>
-                  setSelectedVendor(
-                    selectedVendor === vendor.id ? null : vendor.id
-                  )
-                }
-                className={`group flex flex-col items-center gap-2 rounded-2xl border p-4 transition-all ${
-                  selectedVendor === vendor.id
-                    ? "border-indigo-500/30 bg-indigo-500/5"
-                    : "border-white/[0.06] bg-zinc-900/30 hover:border-white/10 hover:bg-zinc-900/60"
-                }`}
-              >
-                <span className="text-2xl">{vendor.logo}</span>
-                <span className="text-xs font-semibold text-zinc-300 text-center">
-                  {vendor.name}
-                </span>
-                <div className="flex items-center gap-1 text-amber-400">
-                  <span className="text-[10px] font-medium">
-                    {vendor.rating}
-                  </span>
-                  <span className="text-[10px]">★</span>
-                </div>
-              </button>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Product Grid */}
-      <section className="mx-auto max-w-7xl px-4 py-10 sm:px-6">
-        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h2 className="text-2xl font-bold text-white">All Products</h2>
-            <p className="text-sm text-zinc-500">
-              {filtered.length} items
-              {selectedVendor
-                ? ` from ${vendors.find((v) => v.id === selectedVendor)?.name}`
-                : " across all vendors"}
-            </p>
-          </div>
-        </div>
-
+      {/* Store Directory */}
+      <section className="mx-auto max-w-7xl px-4 py-14 sm:px-6">
         <div className="mb-8">
-          <VendorFilter
-            selected={selectedVendor}
-            onSelect={setSelectedVendor}
-          />
+          <h2 className="text-2xl font-bold text-white">Browse Stores</h2>
+          <p className="mt-1 text-sm text-zinc-500">
+            Visit a store, add items, then open your cart. It all goes in one place.
+          </p>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {filtered.map((product) => (
-            <ProductCard key={product.id} product={product} />
-          ))}
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {vendors.map((vendor, i) => {
+            const productCount = getProductsByVendor(vendor.id).length;
+            return (
+              <motion.div
+                key={vendor.id}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.06 }}
+              >
+                <Link
+                  href={`/vendors?id=${vendor.id}`}
+                  className="group flex flex-col overflow-hidden rounded-2xl border border-white/[0.06] bg-zinc-900/40 transition-all hover:border-white/15 hover:bg-zinc-900/70"
+                >
+                  {/* Color bar */}
+                  <div
+                    className="h-2 w-full"
+                    style={{ backgroundColor: vendor.accentColor }}
+                  />
+
+                  <div className="flex flex-col gap-4 p-5">
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center gap-3">
+                        <div
+                          className="flex h-12 w-12 items-center justify-center rounded-xl text-2xl"
+                          style={{ backgroundColor: `${vendor.accentColor}22` }}
+                        >
+                          {vendor.logo}
+                        </div>
+                        <div>
+                          <h3 className="text-base font-bold text-white group-hover:text-indigo-300 transition-colors">
+                            {vendor.name}
+                          </h3>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <div className="flex items-center gap-0.5 text-amber-400">
+                              <Star className="h-3 w-3 fill-current" />
+                              <span className="text-[11px] font-medium">
+                                {vendor.rating}
+                              </span>
+                            </div>
+                            <span className="text-[11px] text-zinc-600">
+                              {productCount} products
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                      <ExternalLink className="h-4 w-4 text-zinc-600 group-hover:text-zinc-400 transition-colors mt-1" />
+                    </div>
+
+                    <p className="text-xs leading-relaxed text-zinc-400">
+                      {vendor.description}
+                    </p>
+
+                    <div className="flex items-center justify-between pt-1 border-t border-white/5">
+                      <span className="font-mono text-[10px] text-zinc-600 truncate max-w-[200px]">
+                        {vendor.verumDid}
+                      </span>
+                      <span
+                        className="flex items-center gap-1 text-[11px] font-semibold transition-colors"
+                        style={{ color: vendor.accentColor }}
+                      >
+                        Visit Store
+                        <ArrowRight className="h-3 w-3" />
+                      </span>
+                    </div>
+                  </div>
+                </Link>
+              </motion.div>
+            );
+          })}
         </div>
       </section>
 
@@ -170,7 +178,7 @@ export default function Home() {
             </div>
             <div className="flex items-center gap-1.5 text-xs text-zinc-600">
               <Shield className="h-3 w-3" />
-              Transactions verified by Verum Protocol
+              Claim architecture powered by Verum Protocol
             </div>
           </div>
         </div>

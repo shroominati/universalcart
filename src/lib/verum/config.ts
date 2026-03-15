@@ -19,23 +19,32 @@ export function getVerumCliPath(): string {
   return process.env.VERUM_CLI_PATH || "verum";
 }
 
-export function getVerumMcpUrl(): string {
-  const host = process.env.VERUM_MCP_HOST || "localhost";
-  const port = process.env.VERUM_MCP_PORT || "3100";
-  return `http://${host}:${port}`;
+export function getVerumMcpCommand(): string {
+  return process.env.VERUM_MCP_COMMAND || "verum-mcp-server";
 }
 
-export const VERUM_MODE_DISPLAY: Record<VerumMode, { label: string; description: string }> = {
+export function getVerumMcpArgs(): string[] {
+  const raw = process.env.VERUM_MCP_ARGS;
+  if (!raw) return [];
+  return raw.split(/\s+/).filter(Boolean);
+}
+
+export const VERUM_MODE_DISPLAY: Record<
+  VerumMode,
+  { label: string; description: string }
+> = {
   mock: {
     label: "Simulated",
-    description: "Claims are locally simulated — no Verum runtime connected",
+    description: "All claims generated and verified locally. No Verum runtime.",
   },
   cli: {
     label: "Verum CLI",
-    description: "Claims signed and verified via the verum-cli binary",
+    description:
+      "Claims generated locally. Verification delegated to verum CLI where supported.",
   },
   mcp: {
     label: "Verum MCP",
-    description: "Claims processed through verum-mcp-server",
+    description:
+      "Claims generated locally. Operations delegated to verum-mcp-server where supported.",
   },
 };

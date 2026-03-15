@@ -10,20 +10,25 @@ export async function POST(req: NextRequest) {
     vendorIds.map(async (vendorId) => {
       const vendor = getVendor(vendorId);
       if (!vendor) {
-        return { vendorId, error: "Vendor not found", claims: [] };
+        return { vendorId, error: "Vendor not found", claims: [], warnings: [] };
       }
 
-      const claims = await provider.createOrderClaimChain({
+      const result = await provider.createOrderClaimChain({
         vendorDid: vendor.verumDid,
         orderId: `order-${vendorId}`,
       });
 
-      return { vendorId, claims };
+      return {
+        vendorId,
+        claims: result.claims,
+        warnings: result.warnings,
+      };
     })
   );
 
   return NextResponse.json({
     vendorOrders: results,
     mode: provider.mode,
+    capabilities: provider.capabilities,
   });
 }

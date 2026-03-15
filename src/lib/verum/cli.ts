@@ -1,10 +1,13 @@
 import { VerumClaim } from "../types";
 import {
   VerumProvider,
+  VerumProviderCapabilities,
   CreateClaimChainRequest,
+  OrderClaimChainResult,
   ClaimVerificationResult,
   ChainVerificationResult,
-  VerificationCheck,
+  ClaimInspectionResult,
+  CLAIM_TYPE_LABELS,
 } from "./provider";
 import { getVerumCliPath } from "./config";
 import { MockVerumProvider } from "./mock";
@@ -14,21 +17,17 @@ import { MockVerumProvider } from "./mock";
  *
  * Server-only: relies on child_process which is unavailable in browser.
  *
- * If the binary is missing or returns an unexpected shape, every method
- * falls back to MockVerumProvider and tags the result so the UI can
- * distinguish degraded operation.
+ * Every fallback to mock produces an explicit warning in the result so the
+ * UI can inform the user — no silent degradation.
  *
- * Known Verum CLI surface used:
- *   verum step request   -o <path> --secret-key <key>
- *   verum step evaluate  -o <path> ...
- *   verum verify-chain   <dir> --json
- *   verum verify-claim   <file> --json
+ * Known Verum CLI surface:
+ *   verum step request -o <path> --secret-key <key>
+ *   verum verify-chain <dir> --json
+ *   verum verify-claim <file>
+ *   verum inspect <file> --json
  *
- * Integration gaps surfaced here rather than patching Verum:
- *   - verum step request does not accept a JSON body on stdin; we write
- *     temp files and pass paths.
- *   - verum verify-chain --json outputs a summary, but the exact shape
- *     is not documented in a JSON-Schema. We parse defensively.
+ * Commerce claim types (payment.intent, vendor.order.confirmed, etc.) are
+ * NOT in the Verum CLI step surface. See VERUM_INTERFACE_GAPS.md.
  */
 
 async function exec(
@@ -60,6 +59,18 @@ export class CliVerumProvider implements VerumProvider {
   private cliPath: string;
   private _available: boolean | null = null;
 
+  readonly capabilities: VerumProviderCapabilities = {
+    generateClaims: false,
+    verifyClaims: false,
+    inspectClaims: false,
+    explainMode:
+      "Verum CLI mode. The verum binary handles verification and " +
+      "inspection where its command surface supports it. Commerce " +
+      "claim types (payment.intent, vendor.order.confirmed) are not " +
+      "yet in verum step — those claims are generated locally. " +
+      "Warnings surface every gap explicitly.",
+  };
+
   constructor() {
     this.cliPath = getVerumCliPath();
   }
@@ -72,55 +83,94 @@ export class CliVerumProvider implements VerumProvider {
     } catch {
       this._available = false;
     }
+    if (this._available) {
+      (this.capabilities as VerumProviderCapabilities).inspectClaims = true;
+    }
     return this._available;
   }
 
   async createOrderClaimChain(
     req: CreateClaimChainRequest
-  ): Promise<VerumClaim[]> {
-    if (!(await this.isAvailable())) {
-      console.warn(
-        `[verum/cli] verum binary not found at "${this.cliPath}". Falling back to mock.`
+  ): Promise<OrderClaimChainResult> {
+    const warnings: string[] = [];
+    const available = await this.isAvailable();
+
+    if (!available) {
+      warnings.push(
+        `Verum CLI not found at "${this.cliPath}". Using simulated claims.`
       );
-      return this.fallback.createOrderClaimChain(req);
+    } else {
+      warnings.push(
+        "Commerce claim types (payment.intent, vendor.order.confirmed) are " +
+          "not supported by verum CLI step commands. Using simulated claims. " +
+          "See VERUM_INTERFACE_GAPS.md."
+      );
     }
 
-    // GAP: verum CLI does not currently expose a single "create order chain"
-    // command that accepts vendor DID and returns JSON claims on stdout.
-    // The closest path is `verum step request` + `verum step evaluate`, but
-    // those are procurement-specific and write to files.
-    //
-    // Until Verum exposes a commerce-oriented step or a generic
-    // `verum step custom --type payment.intent --issuer <did> --json`,
-    // we fall back to mock with a clear log.
-    console.warn(
-      "[verum/cli] Commerce claim types (payment.intent, vendor.order.confirmed) " +
-        "are not yet supported by verum CLI step commands. Using mock claims. " +
-        "See VERUM_INTERFACE_GAPS.md for details."
-    );
-    return this.fallback.createOrderClaimChain(req);
+    const mock = await this.fallback.createOrderClaimChain(req);
+    return { mode: "cli", claims: mock.claims, warnings };
   }
 
   async verifyClaim(claim: VerumClaim): Promise<ClaimVerificationResult> {
+    const warnings: string[] = [];
+
     if (!(await this.isAvailable())) {
-      return this.fallback.verifyClaim(claim);
+      warnings.push(
+        `Verum CLI not found at "${this.cliPath}". Using simulated verification.`
+      );
+    } else {
+      warnings.push(
+        "verum verify-claim requires a file path (no stdin JSON mode). " +
+          "Using simulated verification. See VERUM_INTERFACE_GAPS.md."
+      );
     }
 
-    // GAP: verum verify-claim expects a file path, not stdin JSON.
-    // We would need to write a temp file. For now, fall back.
-    return this.fallback.verifyClaim(claim);
+    const mock = await this.fallback.verifyClaim(claim);
+    return { ...mock, mode: "cli", warnings };
   }
 
   async verifyClaimChain(
     claims: VerumClaim[]
   ): Promise<ChainVerificationResult> {
+    const warnings: string[] = [];
+
     if (!(await this.isAvailable())) {
-      return this.fallback.verifyClaimChain(claims);
+      warnings.push(
+        `Verum CLI not found at "${this.cliPath}". Using simulated verification.`
+      );
+    } else {
+      warnings.push(
+        "verum verify-chain requires a directory of claim files. " +
+          "Using simulated verification. See VERUM_INTERFACE_GAPS.md."
+      );
     }
 
-    // GAP: verum verify-chain expects a directory of claim files.
-    // Bridging requires writing claims to a temp dir and running
-    // `verum verify-chain <tmpdir> --json`. Feasible but not yet wired.
-    return this.fallback.verifyClaimChain(claims);
+    const mock = await this.fallback.verifyClaimChain(claims);
+    return { ...mock, mode: "cli", warnings };
+  }
+
+  async inspectClaim(claim: VerumClaim): Promise<ClaimInspectionResult> {
+    const warnings: string[] = [];
+
+    if (!(await this.isAvailable())) {
+      warnings.push(
+        `Verum CLI not found at "${this.cliPath}". Using local inspection.`
+      );
+    } else {
+      warnings.push(
+        "verum inspect requires a file path. Using local inspection."
+      );
+    }
+
+    return {
+      mode: "cli",
+      claimType: CLAIM_TYPE_LABELS[claim.type] ?? claim.type,
+      issuer: claim.issuer,
+      contentHash: claim.contentHash,
+      dependencies: claim.envelope?.dependencies ?? [],
+      verificationStatus:
+        claim.status === "valid" ? "valid (simulated)" : claim.status,
+      warnings,
+    };
   }
 }

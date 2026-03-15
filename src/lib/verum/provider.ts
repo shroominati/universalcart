@@ -8,15 +8,11 @@ export interface VerificationCheck {
   detail: string;
 }
 
-export interface ClaimVerificationResult {
-  valid: boolean;
-  checks: VerificationCheck[];
-}
-
-export interface ChainVerificationResult {
-  valid: boolean;
-  checks: VerificationCheck[];
-  chainIntegrity: boolean;
+export interface VerumProviderCapabilities {
+  generateClaims: boolean;
+  verifyClaims: boolean;
+  inspectClaims: boolean;
+  explainMode: string;
 }
 
 export interface CreateClaimChainRequest {
@@ -24,18 +20,50 @@ export interface CreateClaimChainRequest {
   orderId: string;
 }
 
+export interface OrderClaimChainResult {
+  mode: VerumMode;
+  claims: VerumClaim[];
+  warnings: string[];
+}
+
+export interface ClaimVerificationResult {
+  mode: VerumMode;
+  valid: boolean;
+  checks: VerificationCheck[];
+  warnings: string[];
+}
+
+export interface ChainVerificationResult {
+  mode: VerumMode;
+  valid: boolean;
+  checks: VerificationCheck[];
+  chainIntegrity: boolean;
+  warnings: string[];
+}
+
+export interface ClaimInspectionResult {
+  mode: VerumMode;
+  claimType: string;
+  issuer: string;
+  contentHash: string;
+  dependencies: string[];
+  verificationStatus: string;
+  warnings: string[];
+}
+
 export interface VerumProvider {
   readonly mode: VerumMode;
+  readonly capabilities: VerumProviderCapabilities;
 
   createOrderClaimChain(
     req: CreateClaimChainRequest
-  ): Promise<VerumClaim[]>;
+  ): Promise<OrderClaimChainResult>;
 
   verifyClaim(claim: VerumClaim): Promise<ClaimVerificationResult>;
 
-  verifyClaimChain(
-    claims: VerumClaim[]
-  ): Promise<ChainVerificationResult>;
+  verifyClaimChain(claims: VerumClaim[]): Promise<ChainVerificationResult>;
+
+  inspectClaim(claim: VerumClaim): Promise<ClaimInspectionResult>;
 }
 
 export const CLAIM_TYPE_LABELS: Record<VerumClaimType, string> = {
@@ -48,13 +76,13 @@ export const CLAIM_TYPE_LABELS: Record<VerumClaimType, string> = {
 
 export const CLAIM_TYPE_DESCRIPTIONS: Record<VerumClaimType, string> = {
   "payment.intent":
-    "Platform attests that payment has been captured and held in escrow.",
+    "Platform issues a claim that payment has been captured. This is the root of the chain — no upstream dependencies.",
   "vendor.order.confirmed":
-    "Vendor attests that the order has been received and accepted.",
+    "Vendor issues a claim that the order is accepted. Depends on the payment.intent hash, creating a cryptographic link.",
   "fulfillment.acknowledged":
-    "Vendor attests that items have been packed and shipped.",
+    "Vendor issues a claim that items are packed and shipped. Depends on vendor.order.confirmed.",
   "delivery.confirmed":
-    "Platform attests that delivery has been completed successfully.",
+    "Platform issues a claim that delivery is complete. Final link in the chain.",
   "refund.issued":
-    "Platform attests that a refund has been processed for this order.",
+    "Platform issues a claim that a refund has been processed. Branches from the original chain.",
 };

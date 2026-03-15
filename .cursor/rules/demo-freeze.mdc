@@ -1,0 +1,59 @@
+---
+description: UniversalCart is in demo freeze. Only bug fixes, copy polish, and visual polish are allowed.
+globs:
+  - "**/*"
+alwaysApply: true
+---
+
+# UniversalCart — Demo Freeze
+
+This repo (web app + Chrome extension) is in demo freeze as of March 2026.
+
+## Allowed changes
+
+- Bug fixes (something is broken and needs to work)
+- Copy polish (typos, label tweaks, description tightening)
+- Visual polish (spacing, colors, animation timing)
+
+## Not allowed
+
+- New architecture (no new providers, no new interfaces, no new abstractions)
+- New features (no new pages, no new API routes, no new extension APIs, no new state, no new promo source types)
+- Verum protocol changes (do not modify claim shapes, envelope structures, or provider contracts)
+- Promo model changes (do not add new PromoSourceKind, PromoConfidence, or PromoActionKind values without explicit request)
+- Dependency additions (no new npm packages, no new Chrome permissions)
+
+## If you are tempted to add something
+
+Ask: "Does this fix a bug or polish what exists?"
+
+- Yes → do it.
+- No → stop. This is a demo freeze.
+
+## Scope
+
+This freeze applies to:
+
+1. **Web app** (`src/`, `__tests__/`, config files)
+2. **Chrome extension** (`extension/`)
+3. **Promo Intelligence layer** (`extension/lib/promo.js`, promo detection in `content.js`, promo UI in `panel.js`)
+
+## Canonical docs
+
+- `DEMO.md` — web app demo walkthrough
+- `extension/README.md` — extension setup and demo walkthrough
+- `WHAT_THIS_PROVES.md` — what is real, what is mocked, what integration requires, why the separation exists
+- `VERUM_INTERFACE_GAPS.md` — exact CLI/MCP surface gaps
+- `README.md` — web app architecture and setup
+
+## Decision status
+
+UniversalCart is currently a demo product. The next step is showing it to real people and gauging reactions — not adding more code. Whether it becomes a real product, a Verum reference app, or stays a demo depends on:
+
+- Demo response
+- Market pull
+- Pilot conversations
+
+## Boundary rule
+
+Do NOT modify the Verum repo from this workspace. UniversalCart consumes Verum through adapters only. The separation is intentional and healthy.

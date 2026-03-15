@@ -5,13 +5,13 @@ import { getVendor } from "@/lib/data";
 import {
   verifyClaimChain,
   getVerumMode,
-  VERUM_MODE_DISPLAY,
 } from "@/lib/verum";
 import type { ChainVerificationResult } from "@/lib/verum";
 import Navbar from "@/components/Navbar";
 import CartDrawer from "@/components/CartDrawer";
 import OrderTimeline from "@/components/OrderTimeline";
-import TrustModeBadge from "@/components/TrustModeBadge";
+import TrustModePanel from "@/components/TrustModePanel";
+import ClaimInspectDrawer from "@/components/ClaimInspectDrawer";
 import {
   Shield,
   Package,
@@ -24,7 +24,7 @@ import {
 import Link from "next/link";
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import type { Order } from "@/lib/types";
+import type { Order, VerumClaim } from "@/lib/types";
 
 function useVerification(order: Order | null) {
   const [result, setResult] = useState<ChainVerificationResult | null>(null);
@@ -44,11 +44,31 @@ function useVerification(order: Order | null) {
   return result;
 }
 
+function VerificationWarnings({ warnings }: { warnings: string[] }) {
+  if (warnings.length === 0) return null;
+  return (
+    <div className="mt-3 rounded-lg border border-amber-500/20 bg-amber-500/5 p-2.5">
+      <div className="flex items-center gap-1.5 mb-1">
+        <FlaskConical className="h-3 w-3 text-amber-400" />
+        <span className="text-[10px] font-semibold text-amber-300">
+          Degradation Notices
+        </span>
+      </div>
+      {[...new Set(warnings)].map((w, i) => (
+        <p key={i} className="text-[10px] text-amber-200/60 leading-relaxed">
+          {w}
+        </p>
+      ))}
+    </div>
+  );
+}
+
 export default function OrdersPage() {
   const { orders } = useCartStore();
   const [expandedOrder, setExpandedOrder] = useState<string | null>(
     orders[0]?.id || null
   );
+  const [inspectingClaim, setInspectingClaim] = useState<VerumClaim | null>(null);
   const mode = getVerumMode();
   const isMock = mode === "mock";
 
@@ -82,6 +102,10 @@ export default function OrdersPage() {
     <div className="min-h-screen bg-zinc-950">
       <Navbar />
       <CartDrawer />
+      <ClaimInspectDrawer
+        claim={inspectingClaim}
+        onClose={() => setInspectingClaim(null)}
+      />
 
       <div className="mx-auto max-w-4xl px-4 py-10 sm:px-6">
         <Link
@@ -101,7 +125,7 @@ export default function OrdersPage() {
         </div>
 
         <div className="mb-6">
-          <TrustModeBadge />
+          <TrustModePanel />
         </div>
 
         <div className="flex flex-col gap-4">
@@ -116,6 +140,7 @@ export default function OrdersPage() {
                 )
               }
               isMock={isMock}
+              onClaimClick={setInspectingClaim}
             />
           ))}
         </div>
@@ -129,11 +154,13 @@ function OrderCard({
   isExpanded,
   onToggle,
   isMock,
+  onClaimClick,
 }: {
   order: Order;
   isExpanded: boolean;
   onToggle: () => void;
   isMock: boolean;
+  onClaimClick: (claim: VerumClaim) => void;
 }) {
   const verification = useVerification(isExpanded ? order : null);
   const allClaims = order.vendorOrders.flatMap((vo) => vo.verumClaims);
@@ -302,7 +329,14 @@ function OrderCard({
                     </div>
                   </div>
 
-                  <OrderTimeline claims={allClaims} />
+                  <p className="mb-3 text-[10px] text-zinc-600">
+                    Click any claim to inspect its full details
+                  </p>
+
+                  <OrderTimeline
+                    claims={allClaims}
+                    onClaimClick={onClaimClick}
+                  />
 
                   {verification && (
                     <div
@@ -326,6 +360,9 @@ function OrderCard({
                           {isMock
                             ? "Simulated Verification"
                             : "Verification Summary"}
+                        </span>
+                        <span className="text-[10px] text-zinc-600 ml-auto">
+                          mode: {verification.mode}
                         </span>
                       </div>
                       <div className="mt-2 flex flex-col gap-1">
@@ -352,6 +389,7 @@ function OrderCard({
                             </div>
                           ))}
                       </div>
+                      <VerificationWarnings warnings={verification.warnings} />
                     </div>
                   )}
                 </div>

@@ -68,8 +68,8 @@ export default function CartDrawer() {
                     Your universal cart is empty
                   </p>
                   <p className="text-xs text-zinc-600 text-center max-w-[240px]">
-                    Add items from any vendor and check out once — every
-                    transaction verified by Verum.
+                    Add items from any vendor and check out once — each
+                    order produces a Verum claim chain you can inspect.
                   </p>
                 </div>
               ) : (
@@ -191,8 +191,8 @@ export default function CartDrawer() {
                     className={`text-xs ${isMock ? "text-amber-300" : "text-indigo-300"}`}
                   >
                     {isMock
-                      ? "Simulated mode — claims will be locally generated"
-                      : `${VERUM_MODE_DISPLAY[mode].label} — cryptographic proof for every step`}
+                      ? "Simulated — claims generated locally, not cryptographically signed"
+                      : `${VERUM_MODE_DISPLAY[mode].label} — claims routed to external Verum runtime`}
                   </span>
                 </div>
                 <Link

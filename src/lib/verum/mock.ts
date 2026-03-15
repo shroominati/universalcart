@@ -2,10 +2,14 @@ import { v4 as uuidv4 } from "uuid";
 import { VerumClaim, VerumClaimType, VerumEnvelope } from "../types";
 import {
   VerumProvider,
+  VerumProviderCapabilities,
   CreateClaimChainRequest,
+  OrderClaimChainResult,
   ClaimVerificationResult,
   ChainVerificationResult,
+  ClaimInspectionResult,
   VerificationCheck,
+  CLAIM_TYPE_LABELS,
 } from "./provider";
 
 const PLATFORM_DID = "did:key:z6MkUniversalCartPlatform";
@@ -42,14 +46,31 @@ function mockClaim(
 export class MockVerumProvider implements VerumProvider {
   readonly mode = "mock" as const;
 
+  readonly capabilities: VerumProviderCapabilities = {
+    generateClaims: true,
+    verifyClaims: true,
+    inspectClaims: true,
+    explainMode:
+      "Pure local mode. Claims use Verum-compatible shapes " +
+      "(ClaimEnvelopeV1, did:key issuers, simulated SHA-256 hashes, " +
+      "simulated Ed25519 signatures) — all values locally generated, " +
+      "not cryptographically real. No external runtime. Demonstrates " +
+      "the claim chain model and inspection UI without requiring " +
+      "Verum infrastructure.",
+  };
+
   async createOrderClaimChain(
     req: CreateClaimChainRequest
-  ): Promise<VerumClaim[]> {
+  ): Promise<OrderClaimChainResult> {
     const payment = mockClaim("payment.intent", PLATFORM_DID);
     const confirm = mockClaim("vendor.order.confirmed", req.vendorDid, [
       payment.contentHash,
     ]);
-    return [payment, confirm];
+    return {
+      mode: "mock",
+      claims: [payment, confirm],
+      warnings: [],
+    };
   }
 
   async verifyClaim(claim: VerumClaim): Promise<ClaimVerificationResult> {
@@ -84,7 +105,7 @@ export class MockVerumProvider implements VerumProvider {
       });
     }
 
-    return { valid: true, checks };
+    return { mode: "mock", valid: true, checks, warnings: [] };
   }
 
   async verifyClaimChain(
@@ -124,9 +145,23 @@ export class MockVerumProvider implements VerumProvider {
     }
 
     return {
+      mode: "mock",
       valid: allChecks.every((c) => c.passed),
       checks: allChecks,
       chainIntegrity,
+      warnings: [],
+    };
+  }
+
+  async inspectClaim(claim: VerumClaim): Promise<ClaimInspectionResult> {
+    return {
+      mode: "mock",
+      claimType: CLAIM_TYPE_LABELS[claim.type] ?? claim.type,
+      issuer: claim.issuer,
+      contentHash: claim.contentHash,
+      dependencies: claim.envelope?.dependencies ?? [],
+      verificationStatus: claim.status === "valid" ? "valid (simulated)" : claim.status,
+      warnings: [],
     };
   }
 }
