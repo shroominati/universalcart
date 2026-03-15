@@ -1,36 +1,89 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# UniversalCart
+
+**Shop everywhere. Checkout once.**
+
+A multi-vendor shopping platform where you add items from multiple stores into a single cart and process everything in one transaction. Every step — payment, vendor confirmation, fulfillment, delivery — is cryptographically signed and verified through the [Verum protocol](https://github.com/your-org/verum).
+
+## How It Works
+
+1. **Browse** products from 6 vendors across electronics, fashion, home, grocery, sports, and beauty
+2. **Add to cart** from any combination of vendors — everything goes into one universal cart
+3. **Checkout once** — the platform splits your order and routes sub-orders to each vendor
+4. **Verum verifies** each step: a claim chain of signed envelopes proves payment was captured, vendors confirmed, items shipped, and delivery completed
+
+## Verum Integration
+
+Each vendor order generates a Verum `ClaimEnvelopeV1` chain:
+
+```
+payment.intent (platform key) → vendor.order.confirmed (vendor key) → fulfillment.acknowledged (vendor key) → delivery.confirmed (platform key)
+```
+
+- Claims are Ed25519-attested with content-hash dependencies
+- Verification walks the DAG and checks signatures, timestamps, and chain integrity
+- The `/api/verum` endpoint exposes claim creation and verification
+
+## Tech Stack
+
+- **Next.js 16** (App Router)
+- **TypeScript**
+- **Tailwind CSS v4**
+- **Zustand** (client state with persistence)
+- **Framer Motion** (animations)
+- **Lucide React** (icons)
 
 ## Getting Started
 
-First, run the development server:
-
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Project Structure
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```
+src/
+├── app/
+│   ├── page.tsx              # Storefront with hero, vendor showcase, product grid
+│   ├── checkout/page.tsx     # Multi-phase checkout with Verum claim generation
+│   ├── orders/page.tsx       # Order history with verification timeline
+│   ├── vendors/page.tsx      # Individual vendor pages
+│   └── api/
+│       ├── verum/route.ts    # Verum claim CRUD and verification
+│       ├── checkout/route.ts # Server-side checkout orchestration
+│       └── orders/route.ts   # Order persistence (placeholder)
+├── components/
+│   ├── Navbar.tsx            # Navigation with cart badge
+│   ├── ProductCard.tsx       # Product display with vendor badge
+│   ├── CartDrawer.tsx        # Slide-out cart grouped by vendor
+│   ├── VendorFilter.tsx      # Vendor filter pills
+│   ├── VendorBadge.tsx       # Vendor identity chip
+│   ├── VerumBadge.tsx        # Claim status indicator
+│   └── OrderTimeline.tsx     # Verum claim chain visualization
+└── lib/
+    ├── types.ts              # TypeScript interfaces
+    ├── data.ts               # Mock vendors and products
+    ├── store.ts              # Zustand store (cart, orders)
+    └── verum.ts              # Verum protocol integration layer
+```
 
-## Learn More
+## Connecting to Real Verum
 
-To learn more about Next.js, take a look at the following resources:
+The `src/lib/verum.ts` module simulates Verum cryptographic operations with matching data shapes. To connect to the real Verum CLI:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+# Install verum-cli from the Verum repo
+cargo install --path /path/to/verum/crates/verum-cli
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+# The verum.ts module can shell out to:
+verum step request -o claim.json --secret-key platform.key
+verum verify-chain ./chain --trust-policy policy.json
+```
 
-## Deploy on Vercel
+Or connect to the MCP server for agent-to-agent verification:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+verum-mcp-server --trust-policy config/trust-policy.json
+```
