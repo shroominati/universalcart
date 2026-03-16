@@ -399,7 +399,7 @@
     }
   }
 
-  function detectCodeFields(add, domain) {
+  function detectCodeFields(add) {
     const inputs = document.querySelectorAll(
       'input[name*="promo"], input[name*="coupon"], input[name*="discount"], input[name*="code"], ' +
       'input[placeholder*="promo"], input[placeholder*="coupon"], input[placeholder*="discount"], input[placeholder*="code"], ' +

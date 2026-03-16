@@ -164,6 +164,8 @@ export default function CheckoutPage() {
                                 className="flex items-center gap-4 px-5 py-3"
                               >
                                 <div className="h-14 w-14 flex-shrink-0 overflow-hidden rounded-lg bg-zinc-800">
+                                  {/* Product URLs are dynamic; keep native img rendering here. */}
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
                                   <img
                                     src={item.product.image}
                                     alt={item.product.name}

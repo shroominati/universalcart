@@ -9,7 +9,6 @@ import {
   VendorOrder,
   VerumClaim,
 } from "./types";
-import { getVendor } from "./data";
 
 interface CartStore {
   items: CartItem[];

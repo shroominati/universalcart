@@ -12,8 +12,6 @@ import {
   exportData,
   exportHtmlReport,
   getPromos,
-  addPromo,
-  removePromo,
   getUserCodes,
   addUserCode,
   removeUserCode,
@@ -22,17 +20,14 @@ import {
   createClaimChain,
   generateDid,
   inspectClaim,
-  CLAIM_TYPES,
 } from "../lib/verum.js";
 import {
   SOURCE,
   CONFIDENCE,
   ACTION,
-  STATUS,
   SOURCE_LABELS,
   CONFIDENCE_LABELS,
   createCandidate,
-  estimateSavings,
   buildPlan,
   inferCartRules,
 } from "../lib/promo.js";

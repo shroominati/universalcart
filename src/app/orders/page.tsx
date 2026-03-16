@@ -310,6 +310,8 @@ function OrderDetails({
                         className="flex items-center gap-3 py-1.5"
                       >
                         <div className="h-8 w-8 flex-shrink-0 overflow-hidden rounded-md bg-zinc-800">
+                          {/* Product URLs are dynamic; keep native img rendering here. */}
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
                             src={item.product.image}
                             alt={item.product.name}

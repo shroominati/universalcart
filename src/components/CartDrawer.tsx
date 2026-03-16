@@ -100,6 +100,8 @@ export default function CartDrawer() {
                                 className="flex gap-3"
                               >
                                 <div className="h-16 w-16 flex-shrink-0 overflow-hidden rounded-lg bg-zinc-800">
+                                  {/* Product URLs are dynamic; keep native img rendering here. */}
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
                                   <img
                                     src={item.product.image}
                                     alt={item.product.name}

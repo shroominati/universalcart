@@ -26,6 +26,8 @@ export default function ProductCard({ product }: { product: Product }) {
       className="group relative flex flex-col overflow-hidden rounded-2xl border border-white/[0.06] bg-zinc-900/50 transition-all hover:border-white/10 hover:bg-zinc-900/80"
     >
       <div className="relative aspect-square overflow-hidden bg-zinc-800">
+        {/* Product URLs are dynamic; keep native img rendering here. */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={product.image}
           alt={product.name}

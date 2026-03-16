@@ -2,14 +2,9 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { MockVerumProvider } from "@/lib/verum/mock";
 import { CliVerumProvider } from "@/lib/verum/cli";
 import { McpVerumProvider } from "@/lib/verum/mcp";
-import type { VerumClaim } from "@/lib/types";
 import type {
   VerumProvider,
   CreateClaimChainRequest,
-  OrderClaimChainResult,
-  ClaimVerificationResult,
-  ChainVerificationResult,
-  ClaimInspectionResult,
 } from "@/lib/verum/provider";
 
 const VENDOR_DID =
