@@ -89,12 +89,12 @@ function esc(str) {
 function groupByVendor(items) {
   const groups = {};
   for (const item of items) {
-    const domain = item.vendor?.domain || "unknown";
-    if (!groups[domain]) {
-      groups[domain] = { vendor: item.vendor, items: [], subtotal: 0 };
+    const vendorKey = item.vendor?.domain || item.vendor?.pageDomain || "unknown";
+    if (!groups[vendorKey]) {
+      groups[vendorKey] = { vendor: item.vendor, items: [], subtotal: 0 };
     }
-    groups[domain].items.push(item);
-    groups[domain].subtotal += (item.price || 0) * item.quantity;
+    groups[vendorKey].items.push(item);
+    groups[vendorKey].subtotal += (item.price || 0) * item.quantity;
   }
   return Object.values(groups);
 }
@@ -118,6 +118,81 @@ function claimLabel(type) {
     .join(" ");
 }
 
+function claimDependencies(claim) {
+  return claim.dependencies || claim.envelope?.dependencies || [];
+}
+
+function claimSignature(claim) {
+  return claim.signature || claim.envelope?.signature || "";
+}
+
+function claimIssuedAt(claim) {
+  return claim.issuedAt || claim.timestamp || claim.envelope?.issuedAt || "";
+}
+
+function getOrderTrust(order) {
+  return order?.trust || {
+    source: "local",
+    mode: "mock",
+    warnings: [],
+    capabilities: null,
+  };
+}
+
+function summarizeTrust(trust) {
+  const normalized = {
+    source: trust?.source || "local",
+    mode: trust?.mode || "mock",
+    warnings: trust?.warnings || [],
+    capabilities: trust?.capabilities || null,
+  };
+
+  if (normalized.mode === "mock") {
+    return {
+      badgeClass: "simulated",
+      badgeTitle:
+        normalized.source === "backend"
+          ? "Backend connected — mock mode"
+          : "Local simulation",
+      badgeDetail:
+        normalized.source === "backend"
+          ? "The web app backend is running in mock mode. Claims are still simulated."
+          : "Claims are generated locally in mock mode.",
+      claimStatus: "valid (simulated)",
+      warnings: normalized.warnings,
+    };
+  }
+
+  if (normalized.warnings.length > 0 || normalized.capabilities?.generateClaims === false) {
+    return {
+      badgeClass: "simulated",
+      badgeTitle: `${String(normalized.mode).toUpperCase()} wrapper`,
+      badgeDetail:
+        `The backend is in ${normalized.mode} mode, but current UniversalCart commerce claims still fall back to simulated generation.`,
+      claimStatus: "valid (simulated fallback)",
+      warnings: normalized.warnings,
+    };
+  }
+
+  return {
+    badgeClass: "verified",
+    badgeTitle: `${String(normalized.mode).toUpperCase()} backend`,
+    badgeDetail: `Claims were created by the backend in ${normalized.mode} mode.`,
+    claimStatus: "valid",
+    warnings: normalized.warnings,
+  };
+}
+
+function renderTrustBadge(trust) {
+  const summary = summarizeTrust(trust);
+  return `
+    <div class="trust-badge ${summary.badgeClass}">
+      ${icons.alertTriangle}
+      ${esc(summary.badgeTitle)} — ${esc(summary.badgeDetail)}
+    </div>
+  `;
+}
+
 function formatDate(iso) {
   return new Date(iso).toLocaleDateString("en-US", {
     month: "short",
@@ -131,6 +206,34 @@ function truncHash(hash, len = 16) {
   if (!hash) return "—";
   if (hash.length <= len + 6) return hash;
   return hash.substring(0, len + 7) + "…" + hash.slice(-6);
+}
+
+function vendorDisplayName(vendor) {
+  return vendor?.name || vendor?.domain || "unknown";
+}
+
+function vendorSourceSummary(vendor) {
+  if (!vendor) return "Unknown source";
+  if (vendor.pageDomain && vendor.pageDomain !== vendor.domain) {
+    return `${vendorDisplayName(vendor)} via ${vendor.pageDomain}`;
+  }
+  return vendor.domain || vendorDisplayName(vendor);
+}
+
+function renderVendorSourceMeta(vendor) {
+  if (!vendor) return "";
+
+  const sourceBits = [];
+  if (vendor.pageDomain && vendor.pageDomain !== vendor.domain) {
+    sourceBits.push(`Viewed on ${vendor.pageDomain}`);
+  }
+  if (vendor.sourceUrl) {
+    sourceBits.push("source captured");
+  }
+
+  return sourceBits.length
+    ? `<div class="vendor-source">${esc(sourceBits.join(" · "))}</div>`
+    : "";
 }
 
 function showToast(msg) {
@@ -374,6 +477,8 @@ async function probeBackend() {
 
 async function generateClaimsViaBackend(order) {
   const allClaims = [];
+  const warnings = [];
+  let mode = backendStatus?.mode || "mock";
   for (const group of order.vendorGroups) {
     const res = await fetch(`${BACKEND_URL}/api/verum`, {
       method: "POST",
@@ -387,10 +492,20 @@ async function generateClaimsViaBackend(order) {
     });
     if (!res.ok) throw new Error(`Backend returned ${res.status}`);
     const data = await res.json();
+    mode = data.mode || data.providerMode || mode;
+    if (Array.isArray(data.warnings)) {
+      warnings.push(...data.warnings);
+    }
     if (data.claims) allClaims.push(...data.claims);
   }
   if (allClaims.length === 0) throw new Error("No claims returned");
-  return allClaims;
+  return {
+    source: "backend",
+    mode,
+    claims: allClaims,
+    warnings: [...new Set(warnings)],
+    capabilities: backendStatus?.capabilities || null,
+  };
 }
 
 // --- Render ---
@@ -468,10 +583,16 @@ function renderCart() {
   if (detectedProduct) html += renderDetectedBanner();
 
   html += `
-    <div class="trust-badge simulated">
-      ${icons.alertTriangle}
-      Simulated — claims generated locally
-    </div>
+    ${renderTrustBadge(
+      backendStatus
+        ? {
+            source: "backend",
+            mode: backendStatus.mode,
+            warnings: [],
+            capabilities: backendStatus.capabilities,
+          }
+        : { source: "local", mode: "mock", warnings: [], capabilities: null }
+    )}
   `;
 
   for (const group of groups) {
@@ -481,7 +602,10 @@ function renderCart() {
         <div class="vendor-header">
           <div class="vendor-accent" style="background:${esc(v.accentColor || getAccentColor(v.domain))}"></div>
           <img class="vendor-favicon" src="${esc(v.favicon || getFaviconUrl(v.domain))}" alt="" onerror="this.style.display='none'">
-          <span class="vendor-name">${esc(v.name || v.domain)}</span>
+          <div class="vendor-title-wrap">
+            <span class="vendor-name">${esc(vendorDisplayName(v))}</span>
+            ${renderVendorSourceMeta(v)}
+          </div>
           <span class="vendor-count">${group.items.length} item${group.items.length > 1 ? "s" : ""}</span>
         </div>
     `;
@@ -497,6 +621,7 @@ function renderCart() {
           <div class="item-info">
             <div class="item-name" title="${esc(item.name)}">${esc(item.name)}</div>
             <div class="item-price">$${(item.price || 0).toFixed(2)}</div>
+            <div class="item-source">${esc(vendorSourceSummary(item.vendor))}</div>
             <div class="item-controls">
               <button class="qty-btn" data-action="qty" data-id="${esc(item.id)}" data-delta="-1">−</button>
               <span class="qty-value">${item.quantity}</span>
@@ -543,13 +668,14 @@ function renderDetectedBanner() {
   const p = detectedProduct;
   const priceStr = p.price != null ? `$${p.price.toFixed(2)}` : "";
   return `
-    <div class="detected-banner">
-      <div class="det-info">
-        <div class="det-label">Product detected on this page</div>
-        <div class="det-name">${esc(p.name)} ${priceStr ? `· ${priceStr}` : ""}</div>
+      <div class="detected-banner">
+        <div class="det-info">
+          <div class="det-label">Product detected on this page</div>
+          <div class="det-name">${esc(p.name)} ${priceStr ? `· ${priceStr}` : ""}</div>
+          <div class="det-source">${esc(vendorSourceSummary(p.vendor))}</div>
+        </div>
+        <button class="add-detected-btn" data-action="add-detected">+ Add</button>
       </div>
-      <button class="add-detected-btn" data-action="add-detected">+ Add</button>
-    </div>
   `;
 }
 
@@ -585,10 +711,16 @@ function renderCheckout() {
         <h2>Review Order</h2>
         <p>${groups.length} store${groups.length > 1 ? "s" : ""} · $${total.toFixed(2)} total</p>
       </div>
-      <div class="trust-badge simulated">
-        ${icons.alertTriangle}
-        Claims will be simulated locally
-      </div>
+      ${renderTrustBadge(
+        backendStatus
+          ? {
+              source: "backend",
+              mode: backendStatus.mode,
+              warnings: [],
+              capabilities: backendStatus.capabilities,
+            }
+          : { source: "local", mode: "mock", warnings: [], capabilities: null }
+      )}
   `;
 
   for (const group of groups) {
@@ -641,10 +773,18 @@ function renderProcessing() {
       <div class="processing">
         <div class="spinner"></div>
         <h3>Generating claim chain…</h3>
-        <p>One chain per store — payment, confirmation, fulfillment, delivery</p>
-        <div class="trust-badge simulated" style="margin-top:8px">
-          ${icons.alertTriangle}
-          Simulated — no external Verum runtime
+        <p>One chain per store — payment intent followed by vendor confirmation.</p>
+        <div style="margin-top:8px">
+          ${renderTrustBadge(
+            backendStatus
+              ? {
+                  source: "backend",
+                  mode: backendStatus.mode,
+                  warnings: [],
+                  capabilities: backendStatus.capabilities,
+                }
+              : { source: "local", mode: "mock", warnings: [], capabilities: null }
+          )}
         </div>
       </div>
     </div>
@@ -666,13 +806,10 @@ function renderConfirmation() {
         <div class="order-id">${esc(currentOrder.id)}</div>
         <div class="order-total">$${currentOrder.total.toFixed(2)}</div>
       </div>
-      <div class="trust-badge ${backendStatus ? "verified" : "simulated"}">
-        ${icons.alertTriangle}
-        ${backendStatus ? `Claims via web app backend (${backendStatus.mode} mode)` : "All claims simulated — not cryptographically signed"}
-      </div>
+      ${renderTrustBadge(getOrderTrust(currentOrder))}
   `;
 
-  html += renderClaimChain(visibleClaims);
+  html += renderClaimChain(visibleClaims, getOrderTrust(currentOrder));
 
   if (isRevealing) {
     html += `<div class="generating-hint">Generating claim ${revealedClaims + 1} of ${currentOrder.claims.length}…</div>`;
@@ -689,8 +826,9 @@ function renderConfirmation() {
   return html;
 }
 
-function renderClaimChain(claims) {
+function renderClaimChain(claims, trust) {
   if (!claims || claims.length === 0) return "";
+  const trustSummary = summarizeTrust(trust);
 
   let html = `
     <div class="claims-section">
@@ -712,18 +850,21 @@ function renderClaimChain(claims) {
         <div class="claim-info">
           <div class="claim-type">${claimLabel(claim.type)}</div>
           <div class="claim-issuer">${truncHash(claim.issuer)}</div>
-          <div class="claim-status">✓ valid (simulated)</div>
+          <div class="claim-status">✓ ${esc(trustSummary.claimStatus)}</div>
         </div>
       </div>
     `;
 
     if (isExpanded) {
       const info = inspectClaim(claim);
+      const detailWarnings = [...new Set([...(info.warnings || []), ...trustSummary.warnings])];
+      const dependencies = claimDependencies(claim);
+      const signature = claimSignature(claim);
       html += `
         <div class="claim-detail">
           <div class="detail-row">
             <span class="detail-label">Trust Mode</span>
-            <span class="detail-value warning">Simulated — locally generated, not externally verified</span>
+            <span class="detail-value warning">${esc(`${trustSummary.badgeTitle} — ${trustSummary.badgeDetail}`)}</span>
           </div>
           <div class="detail-row">
             <span class="detail-label">Type</span>
@@ -740,25 +881,25 @@ function renderClaimChain(claims) {
           </div>
           <div class="detail-row">
             <span class="detail-label">Signature (Ed25519)</span>
-            <span class="detail-value">${truncHash(claim.signature, 24)} <button class="copy-btn" data-action="copy" data-text="${esc(claim.signature)}">${icons.copy} copy</button></span>
+            <span class="detail-value">${truncHash(signature, 24)} <button class="copy-btn" data-action="copy" data-text="${esc(signature)}">${icons.copy} copy</button></span>
           </div>
           <div class="detail-row">
             <span class="detail-label">Dependencies</span>
             ${
-              claim.dependencies.length === 0
+              dependencies.length === 0
                 ? '<span class="detail-value" style="color:var(--text-500)">None — root claim</span>'
-                : `<div class="detail-deps">${claim.dependencies.map((d) => `<div class="dep-hash">${esc(d)}</div>`).join("")}</div>`
+                : `<div class="detail-deps">${dependencies.map((d) => `<div class="dep-hash">${esc(d)}</div>`).join("")}</div>`
             }
           </div>
           <div class="detail-row">
             <span class="detail-label">Verification</span>
-            <span class="detail-value status">${esc(info.verificationStatus)}</span>
+            <span class="detail-value status">${esc(trustSummary.claimStatus)}</span>
           </div>
           <div class="detail-row">
             <span class="detail-label">Issued</span>
-            <span class="detail-value">${formatDate(claim.issuedAt)}</span>
+            <span class="detail-value">${formatDate(claimIssuedAt(claim))}</span>
           </div>
-          ${info.warnings.map((w) => `<div class="detail-row"><span class="detail-label">Warning</span><span class="detail-value warning">${esc(w)}</span></div>`).join("")}
+          ${detailWarnings.map((w) => `<div class="detail-row"><span class="detail-label">Warning</span><span class="detail-value warning">${esc(w)}</span></div>`).join("")}
         </div>
       `;
     }
@@ -804,6 +945,7 @@ function renderOrders() {
     `;
 
     if (isExpanded) {
+      const trust = getOrderTrust(order);
       html += `
         <div class="order-body">
           <div class="order-vendors">
@@ -816,11 +958,8 @@ function renderOrders() {
               })
               .join("")}
           </div>
-          <div class="trust-badge simulated" style="margin-bottom:10px">
-            ${icons.alertTriangle}
-            All claims simulated
-          </div>
-          ${renderClaimChain(order.claims)}
+          ${renderTrustBadge(trust)}
+          ${renderClaimChain(order.claims, trust)}
         </div>
       `;
     }
@@ -903,17 +1042,26 @@ async function handleClick(e) {
     };
 
     // If web app backend is running, use it for claim generation
-    let claims;
+    let claimResult;
     if (backendStatus) {
       try {
-        claims = await generateClaimsViaBackend(order);
+        claimResult = await generateClaimsViaBackend(order);
       } catch {
-        claims = await createClaimChain(order);
+        claimResult = await createClaimChain(order);
+        claimResult.warnings = [
+          "Web app backend was unavailable during checkout. Using local simulation.",
+        ];
       }
     } else {
-      claims = await createClaimChain(order);
+      claimResult = await createClaimChain(order);
     }
-    order.claims = claims;
+    order.claims = claimResult.claims;
+    order.trust = {
+      source: claimResult.source || "local",
+      mode: claimResult.mode || "mock",
+      warnings: claimResult.warnings || [],
+      capabilities: claimResult.capabilities || null,
+    };
 
     await saveOrder(order);
     currentOrder = order;
@@ -995,7 +1143,12 @@ async function handleClick(e) {
         domain: "unknown",
       };
       const item = {
-        id: generateItemId(vendor.domain, detectedProduct.name),
+        id: generateItemId(vendor.domain, detectedProduct.name, {
+          price: detectedProduct.price,
+          image: detectedProduct.image,
+          sourceUrl: vendor.sourceUrl || detectedProduct.url,
+          pageDomain: vendor.pageDomain,
+        }),
         name: detectedProduct.name,
         price: detectedProduct.price || 0,
         image: detectedProduct.image || "",
@@ -1166,9 +1319,9 @@ chrome.storage.onChanged.addListener(async (changes, namespace) => {
       if (newItem) {
         const storeCount = new Set(newCart.map((i) => i.vendor?.domain)).size;
         const totalItems = newCart.reduce((s, i) => s + i.quantity, 0);
-        const domain = newItem.vendor?.domain || "unknown";
+        const source = vendorSourceSummary(newItem.vendor);
         showToast(
-          `Added from ${domain} — ${totalItems} item${totalItems !== 1 ? "s" : ""} across ${storeCount} store${storeCount !== 1 ? "s" : ""}`
+          `Added from ${source} — ${totalItems} item${totalItems !== 1 ? "s" : ""} across ${storeCount} store${storeCount !== 1 ? "s" : ""}`
         );
         return;
       }

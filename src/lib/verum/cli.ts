@@ -20,14 +20,18 @@ import { MockVerumProvider } from "./mock";
  * Every fallback to mock produces an explicit warning in the result so the
  * UI can inform the user — no silent degradation.
  *
- * Known Verum CLI surface:
- *   verum step request -o <path> --secret-key <key>
- *   verum verify-chain <dir> --json
- *   verum verify-claim <file>
- *   verum inspect <file> --json
+ * Current Verum CLI surface (observed locally on 2026-03-15):
+ *   verum verify-chain --json <paths...>
+ *   verum verify-claim --json <file>
+ *   verum inspect --json <file>
+ *   verum step {request,evaluate,budget-check,approve}
+ *   verum generate-chain --json
  *
- * Commerce claim types (payment.intent, vendor.order.confirmed, etc.) are
- * NOT in the Verum CLI step surface. See VERUM_INTERFACE_GAPS.md.
+ * The current blocker is not the presence of verify/inspect commands.
+ * It is that UniversalCart still emits a legacy ClaimEnvelopeV1 commerce
+ * shape, while the current Verum build expects its native JSON schema
+ * (`version`, `claim_type`, `payload`, `proof`, ...) and procurement claim
+ * types. See VERUM_INTERFACE_GAPS.md.
  */
 
 async function exec(
@@ -64,11 +68,11 @@ export class CliVerumProvider implements VerumProvider {
     verifyClaims: false,
     inspectClaims: false,
     explainMode:
-      "Verum CLI mode. The verum binary handles verification and " +
-      "inspection where its command surface supports it. Commerce " +
-      "claim types (payment.intent, vendor.order.confirmed) are not " +
-      "yet in verum step — those claims are generated locally. " +
-      "Warnings surface every gap explicitly.",
+      "Verum CLI mode. The installed verum binary can generate, inspect, " +
+      "and verify native Verum procurement claims, but UniversalCart still " +
+      "emits legacy ClaimEnvelopeV1 commerce claims that the current CLI " +
+      "cannot parse or generate. Warnings surface that schema mismatch " +
+      "explicitly and operations fall back to local simulation.",
   };
 
   constructor() {
@@ -78,13 +82,10 @@ export class CliVerumProvider implements VerumProvider {
   private async isAvailable(): Promise<boolean> {
     if (this._available !== null) return this._available;
     try {
-      const { code } = await exec(this.cliPath, ["--version"]);
+      const { code } = await exec(this.cliPath, ["--help"]);
       this._available = code === 0;
     } catch {
       this._available = false;
-    }
-    if (this._available) {
-      (this.capabilities as VerumProviderCapabilities).inspectClaims = true;
     }
     return this._available;
   }
@@ -101,8 +102,10 @@ export class CliVerumProvider implements VerumProvider {
       );
     } else {
       warnings.push(
-        "Commerce claim types (payment.intent, vendor.order.confirmed) are " +
-          "not supported by verum CLI step commands. Using simulated claims. " +
+        "Current verum can generate native procurement chains, but it still " +
+          "does not expose commerce claim generation for payment.intent or " +
+          "vendor.order.confirmed, and it expects a different JSON schema " +
+          "than UniversalCart's ClaimEnvelopeV1. Using simulated claims. " +
           "See VERUM_INTERFACE_GAPS.md."
       );
     }
@@ -120,8 +123,11 @@ export class CliVerumProvider implements VerumProvider {
       );
     } else {
       warnings.push(
-        "verum verify-claim requires a file path (no stdin JSON mode). " +
-          "Using simulated verification. See VERUM_INTERFACE_GAPS.md."
+        "Current verum can verify native claim JSON files via verify-claim, " +
+          "but UniversalCart claims still use the legacy ClaimEnvelopeV1 " +
+          "commerce schema instead of the CLI's native version/claim_type/" +
+          "payload/proof format. Using simulated verification. " +
+          "See VERUM_INTERFACE_GAPS.md."
       );
     }
 
@@ -140,8 +146,11 @@ export class CliVerumProvider implements VerumProvider {
       );
     } else {
       warnings.push(
-        "verum verify-chain requires a directory of claim files. " +
-          "Using simulated verification. See VERUM_INTERFACE_GAPS.md."
+        "Current verum can verify native claim files or directories via " +
+          "verify-chain, but UniversalCart claims still use the legacy " +
+          "ClaimEnvelopeV1 commerce schema instead of the CLI's native " +
+          "version/claim_type/payload/proof format. Using simulated " +
+          "verification. See VERUM_INTERFACE_GAPS.md."
       );
     }
 
@@ -158,7 +167,11 @@ export class CliVerumProvider implements VerumProvider {
       );
     } else {
       warnings.push(
-        "verum inspect requires a file path. Using local inspection."
+        "Current verum can inspect native claim JSON files via inspect --json, " +
+          "but UniversalCart claims still use the legacy ClaimEnvelopeV1 " +
+          "commerce schema instead of the CLI's native version/claim_type/" +
+          "payload/proof format. Using local inspection. " +
+          "See VERUM_INTERFACE_GAPS.md."
       );
     }
 

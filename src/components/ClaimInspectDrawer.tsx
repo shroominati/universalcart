@@ -95,25 +95,27 @@ export default function ClaimInspectDrawer({
   onClose: () => void;
 }) {
   const [inspection, setInspection] = useState<ClaimInspectionResult | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [inspectedClaimId, setInspectedClaimId] = useState<string | null>(null);
   const mode = getVerumMode();
   const mc = modeColors[mode];
   const ModeIcon = modeIcons[mode];
+  const loading = !!claim && inspectedClaimId !== claim.id;
 
   useEffect(() => {
-    if (!claim) {
-      setInspection(null);
-      return;
-    }
+    if (!claim) return;
+
     let cancelled = false;
-    setLoading(true);
-    inspectClaim(claim).then((result) => {
+
+    void inspectClaim(claim).then((result) => {
       if (!cancelled) {
         setInspection(result);
-        setLoading(false);
+        setInspectedClaimId(claim.id);
       }
     });
-    return () => { cancelled = true; };
+
+    return () => {
+      cancelled = true;
+    };
   }, [claim]);
 
   return (

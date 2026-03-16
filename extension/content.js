@@ -12,10 +12,199 @@
   )
     return;
 
+  const BLOCKED_PRODUCT_NAMES = new Set([
+    "Accessibility Links",
+    "Google Shopping",
+    "Google Search",
+    "Search",
+    "Shopping",
+    "Images",
+    "Videos",
+    "Maps",
+    "News",
+    "Sign in",
+  ]);
+
+  function cleanText(value) {
+    return (value || "").replace(/\s+/g, " ").trim();
+  }
+
+  function isVisible(el) {
+    if (!el) return false;
+    const rect = el.getBoundingClientRect();
+    const style = window.getComputedStyle(el);
+    return (
+      rect.width > 0 &&
+      rect.height > 0 &&
+      style.visibility !== "hidden" &&
+      style.display !== "none"
+    );
+  }
+
+  function parsePrice(value) {
+    const cleaned = cleanText(value);
+    if (!cleaned) return null;
+    const match = cleaned.match(/\$[\s]*([0-9]{1,5}(?:,[0-9]{3})*(?:\.[0-9]{2})?)/);
+    if (!match) return null;
+    return parseFloat(match[1].replace(/,/g, ""));
+  }
+
+  function isLikelyProductName(value) {
+    const text = cleanText(value);
+    if (!text || text.length < 4 || text.length > 160) return false;
+    if (BLOCKED_PRODUCT_NAMES.has(text)) return false;
+    if (/^(home|menu|filters?|nearby|deals?|stores?)$/i.test(text)) return false;
+    if (/^(add to cart|track price|typically \$)/i.test(text)) return false;
+    if (!/[a-z]/i.test(text)) return false;
+    if (/^[\d\s$.,%-]+$/.test(text)) return false;
+    return true;
+  }
+
+  function pickBestCandidate(candidates) {
+    const scored = candidates
+      .map((candidate) => {
+        const text = cleanText(candidate?.text);
+        if (!isLikelyProductName(text)) return null;
+
+        let score = candidate.score || 0;
+        if (text.length >= 10) score += 2;
+        if (text.split(" ").length >= 2) score += 2;
+        if (/\d/.test(text)) score += 1;
+        if (candidate.inDialog) score += 3;
+        return { text, score };
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.score - a.score);
+
+    return scored[0]?.text || null;
+  }
+
+  function getDomainFromUrl(url) {
+    try {
+      return new URL(url).hostname.replace(/^www\./, "");
+    } catch {
+      return "";
+    }
+  }
+
+  function getVendorBrandFromDomain(domain) {
+    if (!domain) return "";
+    const host = domain.split(".")[0] || domain;
+    return host
+      .split(/[-_]/g)
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ");
+  }
+
+  function extractMerchantInfo(root = document) {
+    const anchors = Array.from(root.querySelectorAll("a[href^='http']"))
+      .filter((anchor) => isVisible(anchor))
+      .map((anchor) => {
+        const domain = getDomainFromUrl(anchor.href);
+        if (!domain) return null;
+        if (domain.includes("google.")) return null;
+
+        const text = cleanText(anchor.textContent);
+        const cardText = cleanText(anchor.closest("div, li, article, section")?.textContent);
+        let score = 0;
+        if (text) score += 2;
+        if (text && text.length <= 40) score += 2;
+        if (/\$[0-9]/.test(cardText)) score += 3;
+        if (/target|walmart|amazon|best buy|etsy|nike/i.test(text)) score += 3;
+
+        return {
+          name: text || getVendorBrandFromDomain(domain) || domain,
+          domain,
+          url: anchor.href,
+          score,
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.score - a.score);
+
+    return anchors[0] || null;
+  }
+
+  function detectGoogleShopping() {
+    const isGoogleSurface =
+      /(^|\.)google\./.test(location.hostname) &&
+      (location.pathname.startsWith("/shopping") ||
+        /[?&](tbm=shop|udm=28)\b/.test(location.search) ||
+        cleanText(document.body?.innerText).includes("Google Shopping"));
+
+    if (!isGoogleSurface) return null;
+
+    const dialog = document.querySelector("div[role='dialog']");
+    const roots = [dialog, document].filter(Boolean);
+    const candidates = [];
+
+    for (const root of roots) {
+      const selectors = [
+        "h1",
+        "[role='heading'][aria-level='1']",
+        "[role='heading'][aria-level='2']",
+        "[data-attrid='title']",
+        "[data-attrid='title'] *",
+      ];
+
+      for (const selector of selectors) {
+        root.querySelectorAll(selector).forEach((el) => {
+          if (!isVisible(el)) return;
+          candidates.push({
+            text: el.textContent,
+            score: selector === "h1" ? 6 : 4,
+            inDialog: root === dialog,
+          });
+        });
+      }
+    }
+
+    const name = pickBestCandidate(candidates);
+    if (!name) return null;
+
+    let price = null;
+    for (const root of roots) {
+      const priceSelectors = [
+        "[aria-label*='$']",
+        "[data-shipment]",
+        "[data-price]",
+        "span",
+      ];
+
+      for (const selector of priceSelectors) {
+        const els = Array.from(root.querySelectorAll(selector)).filter((el) => isVisible(el));
+        for (const el of els) {
+          price = parsePrice(el.getAttribute("aria-label") || el.textContent);
+          if (price !== null) break;
+        }
+        if (price !== null) break;
+      }
+      if (price !== null) break;
+    }
+
+    const image =
+      Array.from((dialog || document).querySelectorAll("img"))
+        .filter((img) => isVisible(img) && img.naturalWidth >= 120 && img.naturalHeight >= 120)
+        .map((img) => img.src)
+        .find(Boolean) || "";
+
+    const merchant = extractMerchantInfo(dialog || document);
+
+    return {
+      name,
+      price,
+      image,
+      merchant,
+      source: "adapter:google-shopping",
+    };
+  }
+
   // --- Site-Specific Adapters ---
   // Targeted detection for common demo sites. Each returns { name, price, image } or null.
 
   const siteAdapters = {
+    "google.com": () => detectGoogleShopping(),
     "amazon.com": () => {
       const name =
         document.getElementById("productTitle")?.textContent?.trim() ||
@@ -370,15 +559,18 @@
   }
 
   function detectDomHeuristics() {
-    // Look for common product page patterns
-    const h1 = document.querySelector("h1");
-    if (!h1) return null;
+    const headingCandidates = Array.from(
+      document.querySelectorAll(
+        "h1, [role='heading'][aria-level='1'], main h2, article h2"
+      )
+    )
+      .filter((el) => isVisible(el))
+      .map((el, index) => ({ text: el.textContent, score: index === 0 ? 3 : 1 }));
 
-    const name = h1.textContent?.trim();
-    if (!name || name.length > 200) return null;
+    const name = pickBestCandidate(headingCandidates);
+    if (!name) return null;
 
     // Price detection: look for dollar amounts near the h1
-    const pricePattern = /\$\s?(\d{1,5}(?:\.\d{2})?)/;
     const priceSelectors = [
       '[data-price]',
       '.price',
@@ -392,11 +584,8 @@
     for (const sel of priceSelectors) {
       const el = document.querySelector(sel);
       if (el) {
-        const match = el.textContent?.match(pricePattern);
-        if (match) {
-          price = parseFloat(match[1]);
-          break;
-        }
+        price = parsePrice(el.textContent);
+        if (price !== null) break;
         const dataPrice = el.getAttribute("data-price");
         if (dataPrice) {
           price = parseFloat(dataPrice);
@@ -408,8 +597,7 @@
     // Also try the whole page body for a price near the top
     if (price === null) {
       const bodyText = document.body?.innerText?.substring(0, 5000) || "";
-      const match = bodyText.match(pricePattern);
-      if (match) price = parseFloat(match[1]);
+      price = parsePrice(bodyText);
     }
 
     const image =
@@ -426,31 +614,46 @@
 
   // --- Vendor Info ---
 
-  function getVendorInfo() {
-    const domain = location.hostname.replace(/^www\./, "");
+  function getVendorInfo(product = null) {
+    const pageDomain = location.hostname.replace(/^www\./, "");
     const siteName =
       document.querySelector('meta[property="og:site_name"]')?.content ||
-      domain;
+      pageDomain;
+    const merchantDomain = product?.merchant?.domain || pageDomain;
+    const merchantName = product?.merchant?.name || siteName || merchantDomain;
 
     let hash = 0;
-    for (const ch of domain) {
+    for (const ch of merchantDomain) {
       hash = (hash << 5) - hash + ch.charCodeAt(0);
       hash |= 0;
     }
     const hue = Math.abs(hash) % 360;
 
     return {
-      name: siteName,
-      domain,
-      favicon: `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=32`,
+      name: merchantName,
+      domain: merchantDomain,
+      pageDomain,
+      sourceUrl: product?.merchant?.url || location.href,
+      sourceLabel:
+        merchantDomain === pageDomain
+          ? merchantName
+          : `${merchantName} via ${pageDomain}`,
+      favicon: `https://www.google.com/s2/favicons?domain=${encodeURIComponent(merchantDomain)}&sz=32`,
       accentColor: `hsl(${hue}, 65%, 60%)`,
       did: "", // generated async in verum.js
     };
   }
 
-  function generateItemId(domain, name) {
+  function generateItemId(domain, name, options = {}) {
     let hash = 0;
-    const str = `${domain}::${name}`;
+    const str = [
+      domain,
+      name,
+      options.price ?? "",
+      options.image ?? "",
+      options.sourceUrl ?? "",
+      options.pageDomain ?? "",
+    ].join("::");
     for (let i = 0; i < str.length; i++) {
       hash = (hash << 5) - hash + str.charCodeAt(i);
       hash |= 0;
@@ -472,7 +675,7 @@
 
     const shadow = hostEl.attachShadow({ mode: "closed" });
 
-    const vendor = getVendorInfo();
+    const vendor = getVendorInfo(product);
     const priceDisplay =
       product.price != null ? `$${product.price.toFixed(2)}` : "Price not detected";
     const nameDisplay =
@@ -604,7 +807,12 @@
       if (e.target === closeBtn || closeBtn.contains(e.target)) return;
 
       const item = {
-        id: generateItemId(vendor.domain, product.name),
+        id: generateItemId(vendor.domain, product.name, {
+          price: product.price,
+          image: product.image,
+          sourceUrl: vendor.sourceUrl,
+          pageDomain: vendor.pageDomain,
+        }),
         name: product.name,
         price: product.price || 0,
         image: product.image || "",
@@ -657,9 +865,14 @@
     if (message.type === "DETECT_PRODUCT") {
       const product = detectProduct();
       if (product) {
-        const vendor = getVendorInfo();
+        const vendor = getVendorInfo(product);
         const item = {
-          id: generateItemId(vendor.domain, product.name),
+          id: generateItemId(vendor.domain, product.name, {
+            price: product.price,
+            image: product.image,
+            sourceUrl: vendor.sourceUrl,
+            pageDomain: vendor.pageDomain,
+          }),
           name: product.name,
           price: product.price || 0,
           image: product.image || "",
@@ -692,7 +905,7 @@
           product: {
             ...product,
             url: location.href,
-            vendor: getVendorInfo(),
+            vendor: getVendorInfo(product),
           },
         });
       } catch {

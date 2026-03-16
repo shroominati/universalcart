@@ -286,11 +286,22 @@ body {
   background: var(--bg-800);
 }
 
+.vendor-title-wrap {
+  flex: 1;
+  min-width: 0;
+}
+
 .vendor-name {
   font-size: 12px;
   font-weight: 600;
   color: var(--text-100);
-  flex: 1;
+  display: block;
+}
+
+.vendor-source {
+  font-size: 10px;
+  color: var(--text-500);
+  margin-top: 1px;
 }
 
 .vendor-count {
@@ -356,6 +367,12 @@ body {
   font-size: 12px;
   font-weight: 700;
   color: var(--indigo);
+  margin-top: 2px;
+}
+
+.item-source {
+  font-size: 10px;
+  color: var(--text-500);
   margin-top: 2px;
 }
 
@@ -1015,6 +1032,12 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.detected-banner .det-source {
+  font-size: 10px;
+  color: var(--text-500);
+  margin-top: 2px;
 }
 
 .add-detected-btn {

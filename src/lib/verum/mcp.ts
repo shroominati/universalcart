@@ -63,7 +63,7 @@ export class McpVerumProvider implements VerumProvider {
       const { execFile } = await import("child_process");
       const { promisify } = await import("util");
       const execFileAsync = promisify(execFile);
-      await execFileAsync(this.mcpCommand, ["--version"], { timeout: 5_000 });
+      await execFileAsync(this.mcpCommand, ["--help"], { timeout: 5_000 });
       this._available = true;
     } catch {
       this._available = false;

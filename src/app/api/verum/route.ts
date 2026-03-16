@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getVerumProvider, getVerumMode } from "@/lib/verum";
+import { getVerumMode } from "@/lib/verum";
+import { getVerumProvider } from "@/lib/verum/server-provider";
 import { VerumClaim } from "@/lib/types";
 
 function withCors(response: NextResponse): NextResponse {

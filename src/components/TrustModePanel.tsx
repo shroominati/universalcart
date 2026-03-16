@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Shield,
@@ -15,10 +15,14 @@ import {
 } from "lucide-react";
 import {
   getVerumMode,
-  getVerumProvider,
+  getVerumStatus,
   VERUM_MODE_DISPLAY,
 } from "@/lib/verum";
-import type { VerumMode, VerumProviderCapabilities } from "@/lib/verum";
+import type {
+  VerumMode,
+  VerumProviderCapabilities,
+  VerumStatusResult,
+} from "@/lib/verum";
 
 const modeConfig: Record<
   VerumMode,
@@ -112,12 +116,39 @@ function CapabilityRow({
 
 export default function TrustModePanel() {
   const [expanded, setExpanded] = useState(false);
-  const mode = getVerumMode();
-  const provider = getVerumProvider();
-  const caps: VerumProviderCapabilities = provider.capabilities;
+  const configuredMode = getVerumMode();
+  const [status, setStatus] = useState<VerumStatusResult | null>(null);
+  const [statusError, setStatusError] = useState<string | null>(null);
+  const mode = status?.mode ?? configuredMode;
+  const caps: VerumProviderCapabilities | null = status?.capabilities ?? null;
   const display = VERUM_MODE_DISPLAY[mode];
   const cfg = modeConfig[mode];
   const Icon = cfg.icon;
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void getVerumStatus()
+      .then((nextStatus) => {
+        if (!cancelled) {
+          setStatus(nextStatus);
+          setStatusError(null);
+        }
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setStatusError(
+            error instanceof Error
+              ? error.message
+              : "Unable to load provider capabilities."
+          );
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
     <div
@@ -168,18 +199,24 @@ export default function TrustModePanel() {
               <h4 className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500 mb-2">
                 Provider Capabilities
               </h4>
-              <div className="flex flex-col divide-y divide-white/5">
-                <CapabilityRow capKey="generateClaims" enabled={caps.generateClaims} />
-                <CapabilityRow capKey="verifyClaims" enabled={caps.verifyClaims} />
-                <CapabilityRow capKey="inspectClaims" enabled={caps.inspectClaims} />
-              </div>
+              {caps ? (
+                <div className="flex flex-col divide-y divide-white/5">
+                  <CapabilityRow capKey="generateClaims" enabled={caps.generateClaims} />
+                  <CapabilityRow capKey="verifyClaims" enabled={caps.verifyClaims} />
+                  <CapabilityRow capKey="inspectClaims" enabled={caps.inspectClaims} />
+                </div>
+              ) : (
+                <div className="rounded-xl border border-white/5 bg-zinc-900/60 px-3 py-4 text-[11px] text-zinc-500">
+                  Loading provider capabilities from the server...
+                </div>
+              )}
 
               {/* Mode explanation */}
               <div className="mt-4 rounded-xl bg-zinc-900/60 border border-white/5 p-3">
                 <div className="flex items-start gap-2">
                   <Info className="h-3.5 w-3.5 flex-shrink-0 text-zinc-500 mt-0.5" />
                   <p className="text-[11px] text-zinc-400 leading-relaxed">
-                    {caps.explainMode}
+                    {statusError ?? caps?.explainMode ?? "Loading provider explanation..."}
                   </p>
                 </div>
               </div>

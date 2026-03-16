@@ -40,7 +40,7 @@ export const VERUM_MODE_DISPLAY: Record<
   cli: {
     label: "Verum CLI",
     description:
-      "Claims generated locally. Verification delegated to verum CLI where supported.",
+      "Current verum CLI is detected, but UniversalCart commerce claims still fall back locally because the CLI expects native Verum procurement JSON.",
   },
   mcp: {
     label: "Verum MCP",

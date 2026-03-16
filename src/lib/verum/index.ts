@@ -2,11 +2,11 @@
  * Verum adapter boundary for UniversalCart.
  *
  * This module is the ONLY place product code touches Verum semantics.
- * It re-exports the provider interface, display constants, and a
- * mode-aware factory so the rest of the app stays decoupled.
+ * It re-exports the provider interface, display constants, and
+ * browser-facing helpers so the rest of the app stays decoupled.
  *
  * Import paths:
- *   import { getVerumProvider, CLAIM_TYPE_LABELS, ... } from "@/lib/verum"
+ *   import { createOrderClaimChain, CLAIM_TYPE_LABELS, ... } from "@/lib/verum"
  */
 
 export {
@@ -27,52 +27,49 @@ export { getVerumMode, VERUM_MODE_DISPLAY } from "./config";
 
 export { MockVerumProvider } from "./mock";
 
-import { VerumProvider } from "./provider";
-import { getVerumMode } from "./config";
-import { MockVerumProvider } from "./mock";
+import { VerumClaim } from "../types";
+import type {
+  ChainVerificationResult,
+  ClaimInspectionResult,
+  ClaimVerificationResult,
+  OrderClaimChainResult,
+  VerumMode,
+  VerumProviderCapabilities,
+} from "./provider";
 
-let _cachedProvider: VerumProvider | null = null;
-
-/**
- * Returns the VerumProvider for the current mode.
- *
- * On the client side, only MockVerumProvider is returned (CLI and MCP
- * require server runtimes). Server-side API routes get the real
- * configured provider.
- */
-export function getVerumProvider(): VerumProvider {
-  if (_cachedProvider) return _cachedProvider;
-
-  const mode = getVerumMode();
-
-  if (typeof window !== "undefined") {
-    _cachedProvider = new MockVerumProvider();
-    return _cachedProvider;
-  }
-
-  switch (mode) {
-    case "cli": {
-      const { CliVerumProvider } = require("./cli") as typeof import("./cli");
-      _cachedProvider = new CliVerumProvider();
-      break;
-    }
-    case "mcp": {
-      const { McpVerumProvider } = require("./mcp") as typeof import("./mcp");
-      _cachedProvider = new McpVerumProvider();
-      break;
-    }
-    default:
-      _cachedProvider = new MockVerumProvider();
-  }
-
-  return _cachedProvider;
+export interface VerumStatusResult {
+  mode: VerumMode;
+  providerMode: VerumMode;
+  capabilities: VerumProviderCapabilities;
 }
 
-/**
- * Resets the cached provider. Useful for tests or dynamic mode switching.
- */
-export function resetProviderCache(): void {
-  _cachedProvider = null;
+async function readJson<T>(response: Response): Promise<T> {
+  const body = (await response.json()) as T & { error?: string };
+  if (!response.ok) {
+    throw new Error(body.error ?? `Verum API request failed (${response.status})`);
+  }
+  return body;
+}
+
+async function requestVerumApi<T>(
+  init?: Pick<RequestInit, "body" | "method">
+): Promise<T> {
+  if (typeof window === "undefined") {
+    throw new Error(
+      "Browser Verum helper called on the server. Use server-provider in server code."
+    );
+  }
+
+  const response = await fetch("/api/verum", {
+    method: init?.method ?? "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: init?.body,
+    cache: "no-store",
+  });
+
+  return readJson<T>(response);
 }
 
 // ---------------------------------------------------------------------------
@@ -80,39 +77,54 @@ export function resetProviderCache(): void {
 // (store.ts, pages, components) can migrate incrementally.
 // ---------------------------------------------------------------------------
 
-import { VerumClaim } from "../types";
-import type {
-  OrderClaimChainResult,
-  ChainVerificationResult,
-  ClaimVerificationResult,
-  ClaimInspectionResult,
-} from "./provider";
-
 export async function createOrderClaimChain(
   vendorDid: string,
   orderId: string
 ): Promise<OrderClaimChainResult> {
-  const provider = getVerumProvider();
-  return provider.createOrderClaimChain({ vendorDid, orderId });
+  return requestVerumApi<OrderClaimChainResult>({
+    body: JSON.stringify({
+      action: "create-order-chain",
+      vendorDid,
+      orderId,
+    }),
+  });
 }
 
 export async function verifyClaimChain(
   claims: VerumClaim[]
 ): Promise<ChainVerificationResult> {
-  const provider = getVerumProvider();
-  return provider.verifyClaimChain(claims);
+  return requestVerumApi<ChainVerificationResult>({
+    body: JSON.stringify({
+      action: "verify-chain",
+      claims,
+    }),
+  });
 }
 
 export async function verifyClaim(
   claim: VerumClaim
 ): Promise<ClaimVerificationResult> {
-  const provider = getVerumProvider();
-  return provider.verifyClaim(claim);
+  return requestVerumApi<ClaimVerificationResult>({
+    body: JSON.stringify({
+      action: "verify-claim",
+      claim,
+    }),
+  });
 }
 
 export async function inspectClaim(
   claim: VerumClaim
 ): Promise<ClaimInspectionResult> {
-  const provider = getVerumProvider();
-  return provider.inspectClaim(claim);
+  return requestVerumApi<ClaimInspectionResult>({
+    body: JSON.stringify({
+      action: "inspect-claim",
+      claim,
+    }),
+  });
+}
+
+export async function getVerumStatus(): Promise<VerumStatusResult> {
+  return requestVerumApi<VerumStatusResult>({
+    method: "GET",
+  });
 }

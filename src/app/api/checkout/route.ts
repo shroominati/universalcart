@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getVerumProvider } from "@/lib/verum";
+import { getVerumProvider } from "@/lib/verum/server-provider";
 import { getVendor } from "@/lib/data";
 
 export async function POST(req: NextRequest) {

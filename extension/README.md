@@ -1,6 +1,6 @@
 # UniversalCart Chrome Extension
 
-A browser extension that adds a universal shopping cart across any website. Visit different online stores, add products to one cart, check out once — with a Verum claim chain for every transaction step.
+A browser extension that adds a universal shopping cart across any website. Visit different online stores, add products to one cart, check out once — with an inspectable Verum-style commerce claim chain per vendor order.
 
 ## Install (Developer Mode)
 
@@ -34,14 +34,14 @@ Click the extension icon to open the side panel. It stays open as you browse:
 - **Checkout** — review with promo summary, staggered claim chain generation (claims appear one at a time)
 - **Orders tab** — past orders with expandable Verum claim chains
 - **Export** — JSON export and HTML report (self-contained, shareable)
-- **Backend indicator** — green dot when local web app is running and available as a claim generation backend
+- **Backend indicator** — green dot when the local web app is running and available as a claim backend
 
 ### Claim Chain
 
 When you check out, the extension generates a Verum claim chain for each vendor (website):
 
 ```
-payment.intent → vendor.order.confirmed → fulfillment.acknowledged → delivery.confirmed
+payment.intent → vendor.order.confirmed
 ```
 
 Each claim has:
@@ -54,7 +54,13 @@ Click any claim in the timeline to inspect its full details.
 
 ### Trust Mode
 
-The extension currently runs in **simulated (mock) mode**. All claims are generated locally using Verum-compatible data shapes. The UI labels everything as "Simulated" — nothing pretends to be cryptographically verified when it isn't.
+The extension is honest about trust mode:
+
+- **Local mode** — claims are generated locally in simulated mock mode
+- **Backend mock mode** — claims come from the local web app backend, but are still simulated
+- **Backend CLI/MCP wrapper modes** — the backend may be running in `cli` or `mcp`, but current UniversalCart commerce claims still fall back to simulation with explicit warnings
+
+The extension does not treat “backend connected” as “cryptographically verified.”
 
 ## Demo Walkthrough
 
@@ -65,7 +71,7 @@ The extension currently runs in **simulated (mock) mode**. All claims are genera
 5. Click the extension icon to open the side panel
 6. Two stores, one cart — see items grouped by website
 7. Click **Checkout** → **Place Order**
-8. Watch the claim chain generate — one chain per vendor
+8. Watch the claim chain generate — one payment intent and one vendor confirmation claim per vendor
 9. Click any claim to inspect: issuer DID, content hash, signature, dependencies
 10. Switch to the **Orders** tab to see your history with full claim chains
 
@@ -122,8 +128,24 @@ extension/
 - State persists across tabs and sessions via `chrome.storage.local`
 - Content script uses Shadow DOM to avoid CSS conflicts with host pages
 - Side panel uses the Chrome Side Panel API (Chrome 114+)
-- All Verum claims use real SHA-256 hashes (Web Crypto API)
+- All locally generated claims use real SHA-256 hashes (Web Crypto API)
 - Signatures and DIDs are structurally valid but locally generated
 - Promo savings are always labeled as estimates — no overclaiming
-- If the web app is running at localhost:3000, the extension uses it as a claim generation backend
+- If the web app is running at localhost:3000, the extension can use it as a claim backend, but backend availability does not imply real verification
 - Toast notifications appear when items are added cross-site; badge flashes green briefly
+
+## Automated Smoke Test
+
+Run the browser-level extension smoke test from the repo root:
+
+```bash
+npm run test:extension
+```
+
+What it covers:
+- loads the unpacked extension in Chromium
+- opens the extension side panel directly
+- visits fixture pages that simulate Google Shopping product selection
+- adds detected items to the cart
+- verifies merchant/source metadata in the cart UI
+- completes checkout and verifies order history renders

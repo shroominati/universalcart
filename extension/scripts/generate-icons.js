@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+/* eslint-disable @typescript-eslint/no-require-imports */
 // Generates minimal PNG icons for the UniversalCart extension.
 // Uses only Node.js built-in modules (zlib for deflate).
 

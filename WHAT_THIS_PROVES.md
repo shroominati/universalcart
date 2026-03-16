@@ -51,7 +51,7 @@ These are the exact gaps between what UniversalCart needs and what Verum current
 ### CLI gaps
 
 1. **Generic claim step** — `verum step custom --type <type> --issuer <did> --deps <hash,...> --json` that writes to stdout
-2. **stdin verify** — `verum verify-claim --stdin` and `verum verify-chain --stdin` accepting JSON
+2. **Commerce-native schema bridge** — the current Verum CLI can inspect and verify native claim JSON files, but UniversalCart still emits a different `ClaimEnvelopeV1` commerce shape that the CLI cannot parse
 3. **Commerce claim type registry** — register `payment.intent`, `vendor.order.confirmed`, `fulfillment.acknowledged`, `delivery.confirmed` as known types (or allow unregistered types)
 
 ### MCP gaps

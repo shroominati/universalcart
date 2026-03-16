@@ -140,11 +140,14 @@ export async function removeUserCode(codeId) {
 export async function exportData() {
   const cart = await getCart();
   const orders = await getOrders();
+  const modes = [...new Set(
+    orders.map((order) => order.trust?.mode || "mock")
+  )];
   return {
     exportedAt: new Date().toISOString(),
     extension: "UniversalCart",
     version: "0.1.0",
-    trustMode: "simulated",
+    trustMode: modes.length === 1 ? modes[0] : "mixed",
     cart,
     orders,
   };
@@ -165,24 +168,55 @@ export async function exportHtmlReport() {
     return type.split(".").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
   }
 
+  function claimDependencies(claim) {
+    return claim.dependencies || claim.envelope?.dependencies || [];
+  }
+
+  function claimSignature(claim) {
+    return claim.signature || claim.envelope?.signature || "";
+  }
+
+  function trustSummary(order) {
+    const trust = order.trust || { mode: "mock", source: "local", warnings: [] };
+    if (trust.mode === "mock") {
+      return {
+        badge: "Simulated local mode",
+        status: "✓ valid (simulated)",
+      };
+    }
+    if (trust.warnings?.length) {
+      return {
+        badge: `${String(trust.mode).toUpperCase()} wrapper`,
+        status: "✓ valid (simulated fallback)",
+      };
+    }
+    return {
+      badge: `${String(trust.mode).toUpperCase()} backend`,
+      status: "✓ valid",
+    };
+  }
+
   let ordersHtml = "";
   for (const order of orders) {
     const vendors = [...new Set(order.vendorGroups.map(g => g.vendor?.name || g.vendor?.domain))];
+    const trust = trustSummary(order);
     let claimsHtml = "";
     for (const claim of (order.claims || [])) {
       const color = claimColors[claim.type] || "#818cf8";
-      const deps = claim.dependencies.length === 0
+      const dependencies = claimDependencies(claim);
+      const signature = claimSignature(claim);
+      const deps = dependencies.length === 0
         ? "<em>None — root claim</em>"
-        : claim.dependencies.map(d => `<code>${d}</code>`).join("<br>");
+        : dependencies.map(d => `<code>${d}</code>`).join("<br>");
       claimsHtml += `
         <div style="border-left:3px solid ${color};padding:10px 14px;margin:8px 0;background:#1a1a1f;border-radius:0 8px 8px 0">
           <div style="font-weight:700;color:${color};font-size:13px">${claimLabel(claim.type)}</div>
           <table style="width:100%;margin-top:6px;font-size:11px;border-collapse:collapse">
             <tr><td style="color:#71717a;padding:3px 8px 3px 0;vertical-align:top;white-space:nowrap">Issuer</td><td style="color:#d4d4d8;padding:3px 0;word-break:break-all"><code>${claim.issuer}</code></td></tr>
             <tr><td style="color:#71717a;padding:3px 8px 3px 0;vertical-align:top;white-space:nowrap">Content Hash</td><td style="color:#d4d4d8;padding:3px 0;word-break:break-all"><code>${claim.contentHash}</code></td></tr>
-            <tr><td style="color:#71717a;padding:3px 8px 3px 0;vertical-align:top;white-space:nowrap">Signature</td><td style="color:#d4d4d8;padding:3px 0;word-break:break-all"><code>${claim.signature.substring(0, 40)}…</code></td></tr>
+            <tr><td style="color:#71717a;padding:3px 8px 3px 0;vertical-align:top;white-space:nowrap">Signature</td><td style="color:#d4d4d8;padding:3px 0;word-break:break-all"><code>${signature ? `${signature.substring(0, 40)}…` : "—"}</code></td></tr>
             <tr><td style="color:#71717a;padding:3px 8px 3px 0;vertical-align:top;white-space:nowrap">Dependencies</td><td style="color:#a1a1aa;padding:3px 0;word-break:break-all">${deps}</td></tr>
-            <tr><td style="color:#71717a;padding:3px 8px 3px 0;vertical-align:top;white-space:nowrap">Status</td><td style="color:#34d399;padding:3px 0">✓ valid (simulated)</td></tr>
+            <tr><td style="color:#71717a;padding:3px 8px 3px 0;vertical-align:top;white-space:nowrap">Status</td><td style="color:#34d399;padding:3px 0">${trust.status}</td></tr>
           </table>
         </div>`;
     }
@@ -207,6 +241,7 @@ export async function exportHtmlReport() {
         </div>
         <div style="padding:14px 18px">${itemsHtml}</div>
         <div style="padding:0 18px 18px">
+          <div style="display:inline-block;margin-bottom:8px;padding:4px 10px;background:rgba(99,102,241,0.1);border-radius:6px;font-size:10px;font-weight:600;color:#a5b4fc;text-transform:uppercase">${trust.badge}</div>
           <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:#71717a;margin-bottom:6px">Verum Claim Chain (${(order.claims || []).length} claims)</div>
           ${claimsHtml}
         </div>
@@ -230,7 +265,7 @@ export async function exportHtmlReport() {
     <span style="font-size:18px;font-weight:800;color:#fafafa">Universal<span style="color:#818cf8">Cart</span></span>
   </div>
   <div style="font-size:12px;color:#71717a">Order Report · Generated ${new Date().toLocaleString()}</div>
-  <div style="display:inline-block;margin-top:8px;padding:4px 10px;background:rgba(251,191,36,0.1);border-radius:6px;font-size:10px;font-weight:600;color:#fbbf24;text-transform:uppercase">Simulated — claims generated locally</div>
+  <div style="display:inline-block;margin-top:8px;padding:4px 10px;background:rgba(99,102,241,0.1);border-radius:6px;font-size:10px;font-weight:600;color:#a5b4fc;text-transform:uppercase">Per-order trust status shown below</div>
 </div>
 ${ordersHtml}
 <div style="text-align:center;padding:24px 0;font-size:10px;color:#3f3f46">
@@ -253,9 +288,16 @@ export function getFaviconUrl(domain) {
   return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=32`;
 }
 
-export function generateItemId(domain, productName) {
+export function generateItemId(domain, productName, options = {}) {
   let hash = 0;
-  const str = `${domain}::${productName}`;
+  const str = [
+    domain,
+    productName,
+    options.price ?? "",
+    options.image ?? "",
+    options.sourceUrl ?? "",
+    options.pageDomain ?? "",
+  ].join("::");
   for (let i = 0; i < str.length; i++) {
     hash = (hash << 5) - hash + str.charCodeAt(i);
     hash |= 0;

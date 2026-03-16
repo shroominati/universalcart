@@ -3,10 +3,14 @@
 // Signatures and DIDs are structurally valid but locally generated (mock mode).
 
 export const CLAIM_TYPES = {
-  "payment.intent": "Platform captures payment. Root of the chain — no upstream dependencies.",
-  "vendor.order.confirmed": "Vendor accepts the order. Depends on the payment.intent hash.",
-  "fulfillment.acknowledged": "Vendor confirms shipment. Depends on vendor.order.confirmed.",
-  "delivery.confirmed": "Platform confirms delivery. Final link in the chain.",
+  "payment.intent":
+    "Platform captures payment intent. Root of the current commerce chain.",
+  "vendor.order.confirmed":
+    "Vendor accepts the order. Depends on the payment intent hash.",
+  "fulfillment.acknowledged":
+    "Legacy fulfillment step from the original demo chain.",
+  "delivery.confirmed":
+    "Legacy delivery step from the original demo chain.",
 };
 
 export async function generateDid(seed) {
@@ -57,31 +61,28 @@ async function buildClaim(type, issuer, subject, content, dependencies) {
     id,
     type,
     issuer,
-    subject,
-    content,
     contentHash,
-    signature,
-    dependencies,
-    issuedAt,
+    timestamp: issuedAt,
+    status: "valid",
     envelope: {
       version: "ClaimEnvelopeV1",
-      claimId: id,
+      claimType: type,
       issuer,
       issuedAt,
       contentHash,
+      dependencies,
       signature,
-      dependsOn: dependencies,
     },
   };
 }
 
 /**
- * Creates a full Verum claim chain for an order.
- * One chain per vendor (website), linked by content hashes.
+ * Creates the current UniversalCart commerce chain for an order.
+ * One chain per vendor (website): payment.intent -> vendor.order.confirmed
  */
 export async function createClaimChain(order) {
   const platformDid = await generateDid("universalcart.platform");
-  const allClaims = [];
+  const claims = [];
 
   for (const group of order.vendorGroups) {
     const vendorDid = group.vendor.did;
@@ -114,48 +115,32 @@ export async function createClaimChain(order) {
       [payment.contentHash]
     );
 
-    const fulfilled = await buildClaim(
-      "fulfillment.acknowledged",
-      vendorDid,
-      subject,
-      {
-        orderId: order.id,
-        vendor: group.vendor.domain,
-        status: "shipped",
-      },
-      [confirmed.contentHash]
-    );
-
-    const delivered = await buildClaim(
-      "delivery.confirmed",
-      platformDid,
-      subject,
-      {
-        orderId: order.id,
-        vendor: group.vendor.domain,
-        status: "delivered",
-      },
-      [fulfilled.contentHash]
-    );
-
-    allClaims.push(payment, confirmed, fulfilled, delivered);
+    claims.push(payment, confirmed);
   }
 
-  return allClaims;
+  return {
+    mode: "mock",
+    claims,
+    warnings: [],
+  };
 }
 
 export function inspectClaim(claim) {
+  const dependencies = claim.dependencies ?? claim.envelope?.dependencies ?? [];
+  const signature = claim.signature ?? claim.envelope?.signature ?? "";
+  const issuedAt = claim.issuedAt ?? claim.timestamp ?? claim.envelope?.issuedAt;
+
   return {
     mode: "mock",
     claimType: claim.type,
     description: CLAIM_TYPES[claim.type] || "Unknown claim type",
     issuer: claim.issuer,
-    subject: claim.subject,
     contentHash: claim.contentHash,
-    signature: claim.signature,
-    dependencies: claim.dependencies,
-    verificationStatus: "valid (simulated)",
-    issuedAt: claim.issuedAt,
+    signature,
+    dependencies,
+    verificationStatus:
+      claim.status === "valid" ? "valid (simulated)" : claim.status ?? "unknown",
+    issuedAt,
     envelope: claim.envelope,
     warnings: [
       "Claims are generated locally — not cryptographically signed by an external Verum runtime.",

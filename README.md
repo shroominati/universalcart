@@ -25,7 +25,7 @@ UniversalCart runs in three modes, controlled by the `NEXT_PUBLIC_VERUM_MODE` en
 | Mode | Default | Runtime Dependency | What's Real | What's Simulated |
 |------|---------|-------------------|-------------|-----------------|
 | `mock` | Yes | None | Nothing — pure local demo | All claims, signatures, and verification |
-| `cli` | No | `verum` binary on PATH | Verification and inspection (when Verum supports the commerce types) | Claim generation (commerce types not in Verum CLI today) |
+| `cli` | No | `verum` binary on PATH | Runtime detection of the current Verum CLI build | Claim generation, verification, and inspection for UniversalCart claims still fall back because current Verum expects native procurement claim JSON, not UniversalCart's commerce `ClaimEnvelopeV1` |
 | `mcp` | No | `verum-mcp-server` binary | Verification via MCP tools (when commerce tools exist) | Claim generation (MCP exposes procurement tools only today) |
 
 ### Switching Modes
@@ -55,7 +55,8 @@ The current mode is visible in the UI:
 
 ### Graceful Fallback (Never Silent)
 
-If CLI or MCP mode is enabled but the runtime is unavailable:
+If CLI or MCP mode is enabled but the runtime is unavailable or the current
+Verum surface is incompatible with UniversalCart's claim schema:
 1. Every result carries a `warnings` array describing exactly what degraded and why
 2. Operations fall back to simulated claims automatically
 3. The UI surfaces degradation notices so the user is never misled
@@ -106,7 +107,7 @@ Every result type carries `mode` and `warnings` fields so the UI can always disp
 | Provider | generateClaims | verifyClaims | inspectClaims |
 |----------|---------------|-------------|---------------|
 | Mock | true | true | true |
-| CLI | false (commerce types unsupported) | false (file-path-only API) | false → true (when binary found) |
+| CLI | false (commerce types unsupported) | false (current Verum schema is incompatible with UniversalCart ClaimEnvelopeV1 commerce claims) | false (current Verum schema is incompatible with UniversalCart ClaimEnvelopeV1 commerce claims) |
 | MCP | false (procurement tools only) | false (stdio transport gap) | false (no inspect tool) |
 
 ### Claim Chain Model
@@ -173,11 +174,12 @@ src/
 ```bash
 npm test          # run all tests
 npm run test:watch # watch mode
+npm run test:extension # browser-level Chrome extension smoke test
 ```
 
 Tests cover:
 - **MockVerumProvider**: claim creation, structure validity, chain verification, dependency detection, inspection
-- **CliVerumProvider**: graceful fallback with warnings when binary unavailable
+- **CliVerumProvider**: graceful fallback with warnings when binary unavailable or when the installed Verum build is schema-incompatible with UniversalCart claims
 - **McpVerumProvider**: graceful fallback with warnings when server unreachable
 - **Provider interface contract**: all providers satisfy the same typed behavioral contract (mode, capabilities, all methods, result shapes)
 - **Fallback honesty**: CLI and MCP providers *never* return empty warnings when falling back

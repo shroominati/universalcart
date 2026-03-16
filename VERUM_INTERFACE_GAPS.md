@@ -9,11 +9,10 @@ Verum maintainer can prioritize without guesswork.
 
 | Gap | Detail | Workaround in UniversalCart |
 |-----|--------|-----------------------------|
-| No commerce claim types in `verum step` | `verum step` supports procurement types (request, evaluate, budget-check, approve). Commerce types like `payment.intent`, `vendor.order.confirmed`, `fulfillment.acknowledged`, `delivery.confirmed` are not recognized. | Fall back to mock claims with a console warning. |
+| No commerce claim types in `verum step` / `generate-chain` | Current `verum` supports procurement workflows (`step request/evaluate/budget-check/approve` and `generate-chain`), not UniversalCart commerce types like `payment.intent`, `vendor.order.confirmed`, `fulfillment.acknowledged`, `delivery.confirmed`. | Fall back to simulated commerce claims with an explicit warning. |
+| Schema mismatch with current Verum JSON | Current `verum` expects native claim JSON with fields like `version`, `claim_type`, `payload`, `dependencies`, and `proof`. UniversalCart still emits a legacy `ClaimEnvelopeV1` shape with `claimType`, `issuedAt`, `contentHash`, and string `signature`. The current CLI rejects that JSON. | Fall back to simulated verification/inspection for UniversalCart claims. |
 | No generic custom claim type | There is no `verum step custom --type <arbitrary> --issuer <did> --json` command to create claims of arbitrary type. | Would need this or a commerce-specific step subcommand. |
-| `verify-claim` requires file path | `verum verify-claim <file>` expects a file on disk. There is no stdin or inline JSON mode. | Would need to write temp files. Currently falls back to mock. |
-| `verify-chain` requires directory | `verum verify-chain <dir>` expects a directory of claim files. No stdin batch mode. | Would need to write claims to a temp dir. Currently falls back to mock. |
-| No JSON-on-stdout for `step` output | `verum step request -o <path>` writes to a file but does not echo the claim JSON to stdout. | A `--json` flag on step commands (like verify-chain has) would enable piped workflows. |
+| No generic sign-from-JSON command | `verify-claim`, `verify-chain`, and `inspect` can read native JSON files, but there is still no CLI command to take an arbitrary commerce claim JSON payload and sign it into a valid Verum-native claim file. | UniversalCart cannot upgrade its current commerce claims to native Verum claims without new CLI surface. |
 
 ## MCP Gaps
 
@@ -28,7 +27,7 @@ Verum maintainer can prioritize without guesswork.
 To enable real UniversalCart → Verum integration:
 
 1. **Generic claim step** — `verum step custom --type <type> --issuer <did> --deps <hash,...> --json` that writes to stdout.
-2. **stdin verify** — `verum verify-claim --stdin` and `verum verify-chain --stdin` accepting JSON arrays.
+2. **Commerce-native claim schema support** — either let UniversalCart submit its commerce claim JSON directly or expose a documented way to construct valid native Verum claim JSON for arbitrary claim types.
 3. **Commerce claim type registry** — register `payment.intent`, `vendor.order.confirmed`, `fulfillment.acknowledged`, `delivery.confirmed` as known claim types (or allow unregistered types).
 4. **HTTP bridge for MCP** — either a `--http` flag on `verum-mcp-server` or a documented sidecar pattern.
 

@@ -22,24 +22,32 @@ import {
   FlaskConical,
 } from "lucide-react";
 import Link from "next/link";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import type { Order, VerumClaim } from "@/lib/types";
 
-function useVerification(order: Order | null) {
+function useVerification(order: Order) {
   const [result, setResult] = useState<ChainVerificationResult | null>(null);
 
-  const verify = useCallback(async () => {
-    if (!order) return;
-    const allClaims = order.vendorOrders.flatMap((vo) => vo.verumClaims);
-    if (allClaims.length === 0) return;
-    const r = await verifyClaimChain(allClaims);
-    setResult(r);
-  }, [order]);
-
   useEffect(() => {
-    verify();
-  }, [verify]);
+    let cancelled = false;
+    const allClaims = order.vendorOrders.flatMap((vo) => vo.verumClaims);
+    if (allClaims.length === 0) {
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    void verifyClaimChain(allClaims).then((verificationResult) => {
+      if (!cancelled) {
+        setResult(verificationResult);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [order]);
 
   return result;
 }
@@ -162,9 +170,6 @@ function OrderCard({
   isMock: boolean;
   onClaimClick: (claim: VerumClaim) => void;
 }) {
-  const verification = useVerification(isExpanded ? order : null);
-  const allClaims = order.vendorOrders.flatMap((vo) => vo.verumClaims);
-
   return (
     <div className="rounded-2xl border border-white/[0.06] bg-zinc-900/40 overflow-hidden">
       <button
@@ -236,168 +241,185 @@ function OrderCard({
 
       <AnimatePresence>
         {isExpanded && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            className="overflow-hidden"
-          >
-            <div className="border-t border-white/5 px-5 py-5">
-              <div className="grid gap-6 lg:grid-cols-2">
-                {/* Vendor Orders */}
-                <div>
-                  <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-zinc-500">
-                    Vendor Orders
-                  </h3>
-                  <div className="flex flex-col gap-3">
-                    {order.vendorOrders.map((vo) => {
-                      const vendor = getVendor(vo.vendorId);
-                      return (
-                        <div
-                          key={vo.vendorId}
-                          className="rounded-xl border border-white/5 bg-zinc-950/50 p-4"
-                        >
-                          <div className="flex items-center justify-between mb-3">
-                            <div className="flex items-center gap-2">
-                              <span
-                                className="flex h-6 w-6 items-center justify-center rounded-md text-xs"
-                                style={{
-                                  backgroundColor: `${vendor?.accentColor}22`,
-                                }}
-                              >
-                                {vendor?.logo}
-                              </span>
-                              <span className="text-xs font-semibold text-white">
-                                {vendor?.name}
-                              </span>
-                            </div>
-                            <span className="rounded-md bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-400 capitalize">
-                              {vo.status}
-                            </span>
-                          </div>
-
-                          {vo.items.map((item) => (
-                            <div
-                              key={item.product.id}
-                              className="flex items-center gap-3 py-1.5"
-                            >
-                              <div className="h-8 w-8 flex-shrink-0 overflow-hidden rounded-md bg-zinc-800">
-                                <img
-                                  src={item.product.image}
-                                  alt={item.product.name}
-                                  className="h-full w-full object-cover"
-                                />
-                              </div>
-                              <span className="flex-1 text-xs text-zinc-300 truncate">
-                                {item.product.name}
-                              </span>
-                              <span className="text-xs text-zinc-500">
-                                x{item.quantity}
-                              </span>
-                              <span className="text-xs font-medium text-white">
-                                $
-                                {(
-                                  item.product.price * item.quantity
-                                ).toFixed(2)}
-                              </span>
-                            </div>
-                          ))}
-
-                          <div className="mt-2 flex justify-between border-t border-white/5 pt-2">
-                            <span className="text-xs text-zinc-500">
-                              Subtotal
-                            </span>
-                            <span className="text-xs font-semibold text-white">
-                              ${vo.subtotal.toFixed(2)}
-                            </span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Verum Verification */}
-                <div>
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
-                      Verum Claim Chain
-                    </h3>
-                    <div className="flex items-center gap-1.5 text-[11px] text-zinc-600">
-                      <Shield className="h-3 w-3" />
-                      Chain: {order.verumChainId}
-                    </div>
-                  </div>
-
-                  <p className="mb-3 text-[10px] text-zinc-600">
-                    Click any claim to inspect its full details
-                  </p>
-
-                  <OrderTimeline
-                    claims={allClaims}
-                    onClaimClick={onClaimClick}
-                  />
-
-                  {verification && (
-                    <div
-                      className={`mt-4 rounded-xl border p-3 ${
-                        isMock
-                          ? "border-amber-500/20 bg-amber-500/5"
-                          : "border-indigo-500/20 bg-indigo-500/5"
-                      }`}
-                    >
-                      <div className="flex items-center gap-2">
-                        {isMock ? (
-                          <FlaskConical className="h-4 w-4 text-amber-400" />
-                        ) : (
-                          <Shield className="h-4 w-4 text-indigo-400" />
-                        )}
-                        <span
-                          className={`text-xs font-semibold ${
-                            isMock ? "text-amber-300" : "text-indigo-300"
-                          }`}
-                        >
-                          {isMock
-                            ? "Simulated Verification"
-                            : "Verification Summary"}
-                        </span>
-                        <span className="text-[10px] text-zinc-600 ml-auto">
-                          mode: {verification.mode}
-                        </span>
-                      </div>
-                      <div className="mt-2 flex flex-col gap-1">
-                        {verification.checks
-                          .filter(
-                            (c, i, arr) =>
-                              arr.findIndex((x) => x.name === c.name) === i
-                          )
-                          .map((check, i) => (
-                            <div
-                              key={i}
-                              className="flex items-center gap-2 text-[11px]"
-                            >
-                              <CheckCircle2
-                                className={`h-3 w-3 ${
-                                  check.passed
-                                    ? "text-emerald-400"
-                                    : "text-red-400"
-                                }`}
-                              />
-                              <span className="text-zinc-400">
-                                {check.name}
-                              </span>
-                            </div>
-                          ))}
-                      </div>
-                      <VerificationWarnings warnings={verification.warnings} />
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          </motion.div>
+          <OrderDetails
+            order={order}
+            isMock={isMock}
+            onClaimClick={onClaimClick}
+          />
         )}
       </AnimatePresence>
     </div>
+  );
+}
+
+function OrderDetails({
+  order,
+  isMock,
+  onClaimClick,
+}: {
+  order: Order;
+  isMock: boolean;
+  onClaimClick: (claim: VerumClaim) => void;
+}) {
+  const verification = useVerification(order);
+  const allClaims = order.vendorOrders.flatMap((vo) => vo.verumClaims);
+
+  return (
+    <motion.div
+      initial={{ height: 0, opacity: 0 }}
+      animate={{ height: "auto", opacity: 1 }}
+      exit={{ height: 0, opacity: 0 }}
+      className="overflow-hidden"
+    >
+      <div className="border-t border-white/5 px-5 py-5">
+        <div className="grid gap-6 lg:grid-cols-2">
+          <div>
+            <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-zinc-500">
+              Vendor Orders
+            </h3>
+            <div className="flex flex-col gap-3">
+              {order.vendorOrders.map((vo) => {
+                const vendor = getVendor(vo.vendorId);
+                return (
+                  <div
+                    key={vo.vendorId}
+                    className="rounded-xl border border-white/5 bg-zinc-950/50 p-4"
+                  >
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className="flex h-6 w-6 items-center justify-center rounded-md text-xs"
+                          style={{
+                            backgroundColor: `${vendor?.accentColor}22`,
+                          }}
+                        >
+                          {vendor?.logo}
+                        </span>
+                        <span className="text-xs font-semibold text-white">
+                          {vendor?.name}
+                        </span>
+                      </div>
+                      <span className="rounded-md bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-400 capitalize">
+                        {vo.status}
+                      </span>
+                    </div>
+
+                    {vo.items.map((item) => (
+                      <div
+                        key={item.product.id}
+                        className="flex items-center gap-3 py-1.5"
+                      >
+                        <div className="h-8 w-8 flex-shrink-0 overflow-hidden rounded-md bg-zinc-800">
+                          <img
+                            src={item.product.image}
+                            alt={item.product.name}
+                            className="h-full w-full object-cover"
+                          />
+                        </div>
+                        <span className="flex-1 text-xs text-zinc-300 truncate">
+                          {item.product.name}
+                        </span>
+                        <span className="text-xs text-zinc-500">
+                          x{item.quantity}
+                        </span>
+                        <span className="text-xs font-medium text-white">
+                          $
+                          {(
+                            item.product.price * item.quantity
+                          ).toFixed(2)}
+                        </span>
+                      </div>
+                    ))}
+
+                    <div className="mt-2 flex justify-between border-t border-white/5 pt-2">
+                      <span className="text-xs text-zinc-500">
+                        Subtotal
+                      </span>
+                      <span className="text-xs font-semibold text-white">
+                        ${vo.subtotal.toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
+                Verum Claim Chain
+              </h3>
+              <div className="flex items-center gap-1.5 text-[11px] text-zinc-600">
+                <Shield className="h-3 w-3" />
+                Chain: {order.verumChainId}
+              </div>
+            </div>
+
+            <p className="mb-3 text-[10px] text-zinc-600">
+              Click any claim to inspect its full details
+            </p>
+
+            <OrderTimeline
+              claims={allClaims}
+              onClaimClick={onClaimClick}
+            />
+
+            {verification && (
+              <div
+                className={`mt-4 rounded-xl border p-3 ${
+                  isMock
+                    ? "border-amber-500/20 bg-amber-500/5"
+                    : "border-indigo-500/20 bg-indigo-500/5"
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  {isMock ? (
+                    <FlaskConical className="h-4 w-4 text-amber-400" />
+                  ) : (
+                    <Shield className="h-4 w-4 text-indigo-400" />
+                  )}
+                  <span
+                    className={`text-xs font-semibold ${
+                      isMock ? "text-amber-300" : "text-indigo-300"
+                    }`}
+                  >
+                    {isMock
+                      ? "Simulated Verification"
+                      : "Verification Summary"}
+                  </span>
+                  <span className="text-[10px] text-zinc-600 ml-auto">
+                    mode: {verification.mode}
+                  </span>
+                </div>
+                <div className="mt-2 flex flex-col gap-1">
+                  {verification.checks
+                    .filter(
+                      (c, i, arr) =>
+                        arr.findIndex((x) => x.name === c.name) === i
+                    )
+                    .map((check, i) => (
+                      <div
+                        key={i}
+                        className="flex items-center gap-2 text-[11px]"
+                      >
+                        <CheckCircle2
+                          className={`h-3 w-3 ${
+                            check.passed ? "text-emerald-400" : "text-red-400"
+                          }`}
+                        />
+                        <span className="text-zinc-400">
+                          {check.name}
+                        </span>
+                      </div>
+                    ))}
+                </div>
+                <VerificationWarnings warnings={verification.warnings} />
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </motion.div>
   );
 }
