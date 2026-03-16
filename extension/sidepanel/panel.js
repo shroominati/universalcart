@@ -52,6 +52,11 @@ let promoPlan = null; // CartSavingsSummary from buildPlan()
 let allPromos = []; // raw detected promo candidates
 let userCodes = []; // user-added promo codes
 let promoExpanded = false; // toggle promo section
+let backendPromoSuggestions = []; // auto-looked-up public coupon suggestions
+let promoLookupState = "idle"; // idle | loading | ready | unavailable | error
+let promoLookupMessage = "";
+let lastPromoLookupKey = "";
+let promoLookupSeq = 0;
 
 // --- Icons (inline SVG) ---
 
@@ -252,15 +257,17 @@ async function refreshPromos() {
   const rawPromos = await getPromos();
   userCodes = await getUserCodes();
   const groups = groupByVendor(cartItems);
+  const mergedRawPromos = [...rawPromos, ...backendPromoSuggestions];
 
   // Convert raw detected promos to proper candidates
-  const candidates = rawPromos.map((raw) => {
+  const candidates = mergedRawPromos.map((raw) => {
     const sourceMap = {
       structured_discount: SOURCE.MERCHANT_STRUCTURED,
       visible_code: SOURCE.SITE_DETECTED,
       code_field: SOURCE.SITE_DETECTED,
       signup_offer: SOURCE.SIGNUP_OFFER,
       sale_banner: SOURCE.SITE_DETECTED,
+      public_lookup_code: SOURCE.BACKEND_SUGGESTED,
     };
     const confMap = {
       verified: CONFIDENCE.VERIFIED,
@@ -273,6 +280,7 @@ async function refreshPromos() {
       code_field: ACTION.ADD_CODE,
       signup_offer: ACTION.OPEN_SIGNUP,
       sale_banner: ACTION.NO_ACTION,
+      public_lookup_code: raw.code ? ACTION.USER_APPLY : ACTION.NO_ACTION,
     };
     return createCandidate({
       domain: raw.domain,
@@ -314,6 +322,116 @@ async function refreshPromos() {
   promoPlan = groups.length > 0 ? buildPlan(groups, candidates) : null;
 }
 
+function getPromoLookupSummary() {
+  if (!backendStatus) {
+    return {
+      className: "promo-action-needed",
+      text: "Run the local web app to enable automatic public coupon lookup.",
+    };
+  }
+
+  if (promoLookupState === "loading") {
+    return {
+      className: "promo-conditional",
+      text: "Looking up public coupon suggestions for stores in your cart…",
+    };
+  }
+
+  if (promoLookupState === "ready") {
+    const count = backendPromoSuggestions.length;
+    return {
+      className: count > 0 ? "promo-certain" : "promo-conditional",
+      text:
+        count > 0
+          ? `${count} public coupon suggestion${count === 1 ? "" : "s"} found automatically.`
+          : "No public coupon suggestions found for the current stores.",
+    };
+  }
+
+  if (promoLookupState === "error") {
+    return {
+      className: "promo-action-needed",
+      text: promoLookupMessage || "Automatic public coupon lookup failed.",
+    };
+  }
+
+  return null;
+}
+
+async function lookupPromosViaBackend(force = false) {
+  const groups = groupByVendor(cartItems).filter((group) => group.vendor?.domain);
+  const lookupStores = groups.map((group) => ({
+    domain: group.vendor.domain,
+    vendorName: group.vendor.name || group.vendor.domain,
+  }));
+  const lookupKey = JSON.stringify(
+    lookupStores
+      .map((store) => `${store.domain}:${store.vendorName}`)
+      .sort()
+  );
+
+  if (!backendStatus) {
+    backendPromoSuggestions = [];
+    promoLookupState = "unavailable";
+    promoLookupMessage = "";
+    lastPromoLookupKey = lookupKey;
+    await refreshPromos();
+    return;
+  }
+
+  if (lookupStores.length === 0) {
+    backendPromoSuggestions = [];
+    promoLookupState = "idle";
+    promoLookupMessage = "";
+    lastPromoLookupKey = "";
+    await refreshPromos();
+    return;
+  }
+
+  if (!force && lookupKey === lastPromoLookupKey) {
+    return;
+  }
+
+  lastPromoLookupKey = lookupKey;
+  const lookupId = ++promoLookupSeq;
+  promoLookupState = "loading";
+  promoLookupMessage = "";
+  render();
+
+  try {
+    const response = await fetch(`${BACKEND_URL}/api/promos`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ stores: lookupStores }),
+      signal: AbortSignal.timeout(10000),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Lookup backend returned ${response.status}`);
+    }
+
+    const data = await response.json();
+    if (lookupId !== promoLookupSeq) return;
+
+    backendPromoSuggestions = Array.isArray(data.suggestions)
+      ? data.suggestions
+      : [];
+    promoLookupState = "ready";
+    promoLookupMessage = "";
+    await refreshPromos();
+    render();
+  } catch (error) {
+    if (lookupId !== promoLookupSeq) return;
+
+    backendPromoSuggestions = [];
+    promoLookupState = "error";
+    promoLookupMessage =
+      error instanceof Error ? error.message : "Lookup request failed";
+    await refreshPromos();
+    render();
+  }
+}
+
 function renderPromoSection() {
   if (!promoPlan || cartItems.length === 0) return "";
 
@@ -343,6 +461,18 @@ function renderPromoSection() {
   `;
 
   if (promoExpanded) {
+    const lookupSummary = getPromoLookupSummary();
+
+    if (lookupSummary) {
+      html += `
+        <div class="promo-summary">
+          <div class="promo-summary-detail">
+            <span class="${lookupSummary.className}">${esc(lookupSummary.text)}</span>
+          </div>
+        </div>
+      `;
+    }
+
     // Summary bar
     if (totalEstimatedSavings > 0) {
       html += `
@@ -1306,6 +1436,7 @@ chrome.storage.onChanged.addListener(async (changes, namespace) => {
 
     // Recompute promo plan when cart changes
     await refreshPromos();
+    await lookupPromosViaBackend();
 
     if (newCart.length > oldCart.length) {
       const newItem = newCart.find(
@@ -1345,13 +1476,17 @@ async function init() {
   orders = await getOrders();
   backendStatus = await probeBackend();
   await refreshPromos();
+  await lookupPromosViaBackend();
   render();
 
   // Re-probe periodically (every 30s)
   setInterval(async () => {
     const prev = backendStatus;
     backendStatus = await probeBackend();
-    if (!!prev !== !!backendStatus) render();
+    if (!!prev !== !!backendStatus) {
+      await lookupPromosViaBackend(true);
+      render();
+    }
   }, 30000);
 }
 
