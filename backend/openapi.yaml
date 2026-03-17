@@ -1,0 +1,1155 @@
+openapi: 3.1.0
+info:
+  title: UniversalCart API
+  version: 0.5.0
+  description: |
+    Universal shopping cart Chrome extension backend API.
+    Provides cart management, price scouting, checkout orchestration,
+    promo code aggregation, deal finding, notifications, and security services.
+  contact:
+    name: UniversalCart
+    url: https://github.com/shroominati/universalcart
+  license:
+    name: MIT
+
+servers:
+  - url: http://localhost:3001
+    description: Local development
+  - url: https://api.universalcart.app
+    description: Production
+
+tags:
+  - name: Auth
+    description: User registration, login, session management
+  - name: Cart
+    description: Persistent multi-vendor shopping cart
+  - name: Checkout
+    description: Automated multi-vendor checkout orchestration
+  - name: Promos
+    description: Promo code discovery and submission
+  - name: PriceScout
+    description: Cross-vendor price comparison
+  - name: Deals
+    description: Deal scanning and discovery
+  - name: Notifications
+    description: User notification management
+  - name: Security
+    description: Audit logs and API key management
+  - name: Analytics
+    description: Savings and activity analytics
+  - name: Health
+    description: Service health and status
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      description: Session token from /api/auth/login or /api/auth/register
+    RequestSigning:
+      type: apiKey
+      in: header
+      name: X-UC-Signature
+      description: HMAC-SHA256 request signature for extension ↔ backend calls
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+      required: [error]
+
+    ValidationError:
+      type: object
+      properties:
+        error:
+          type: string
+          example: Validation failed
+        code:
+          type: string
+          example: VALIDATION_ERROR
+        details:
+          type: array
+          items:
+            type: object
+            properties:
+              location:
+                type: string
+                enum: [body, params, query]
+              field:
+                type: string
+              message:
+                type: string
+      required: [error, code, details]
+
+    RateLimitError:
+      type: object
+      properties:
+        error:
+          type: string
+        retryAfter:
+          type: integer
+          description: Seconds until rate limit resets
+
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+          format: email
+        createdAt:
+          type: integer
+          description: Unix timestamp ms
+        lastLogin:
+          type: integer
+
+    CartItem:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+          maxLength: 500
+        price:
+          type: number
+          minimum: 0
+        currency:
+          type: string
+          pattern: "^[A-Z]{3}$"
+          default: USD
+        image:
+          type: string
+          format: uri
+        sourceUrl:
+          type: string
+          format: uri
+        vendor:
+          type: string
+          maxLength: 100
+        vendorSku:
+          type: string
+        universalId:
+          type: string
+        variant:
+          type: string
+        quantity:
+          type: integer
+          minimum: 1
+          maximum: 999
+          default: 1
+        status:
+          type: string
+          enum: [active, watchlist, purchased, removed]
+        lowestPrice:
+          type: number
+        highestPrice:
+          type: number
+        addedAt:
+          type: integer
+        updatedAt:
+          type: integer
+      required: [name, sourceUrl, vendor]
+
+    PriceHistory:
+      type: object
+      properties:
+        price:
+          type: number
+        recordedAt:
+          type: integer
+        source:
+          type: string
+
+    ShippingProfile:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+          maxLength: 100
+        address1:
+          type: string
+          maxLength: 200
+        address2:
+          type: string
+        city:
+          type: string
+          maxLength: 100
+        state:
+          type: string
+          maxLength: 100
+        zip:
+          type: string
+          maxLength: 20
+        country:
+          type: string
+          default: US
+        phone:
+          type: string
+      required: [name, address1, city, state, zip]
+
+    PaymentMethod:
+      type: object
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          enum: [card, paypal, applepay, googlepay]
+          default: card
+        last4:
+          type: string
+          pattern: "^\\d{4}$"
+        brand:
+          type: string
+        expiryMonth:
+          type: integer
+          minimum: 1
+          maximum: 12
+        expiryYear:
+          type: integer
+          minimum: 2024
+          maximum: 2040
+        isDefault:
+          type: boolean
+          default: false
+
+    Notification:
+      type: object
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          enum: [price_drop, deal_found, back_in_stock, checkout, system]
+        title:
+          type: string
+        message:
+          type: string
+        data:
+          type: object
+        priority:
+          type: string
+          enum: [low, medium, high]
+        read:
+          type: boolean
+        createdAt:
+          type: integer
+
+    AuditEntry:
+      type: object
+      properties:
+        id:
+          type: string
+        timestamp:
+          type: integer
+        type:
+          type: string
+        userId:
+          type: string
+        action:
+          type: string
+        severity:
+          type: string
+          enum: [info, warning, critical]
+        chainHash:
+          type: string
+
+    Deal:
+      type: object
+      properties:
+        id:
+          type: string
+        vendor:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        code:
+          type: string
+        discountType:
+          type: string
+        discountValue:
+          type: number
+        discountPercent:
+          type: number
+        source:
+          type: string
+        verified:
+          type: boolean
+        expiresAt:
+          type: integer
+        discoveredAt:
+          type: integer
+
+  parameters:
+    IdParam:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+    VendorParam:
+      name: vendor
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+
+  responses:
+    BadRequest:
+      description: Validation error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ValidationError"
+    Unauthorized:
+      description: Authentication required or invalid token
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    TooManyRequests:
+      description: Rate limit exceeded
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+        X-RateLimit-Limit:
+          schema:
+            type: integer
+        X-RateLimit-Remaining:
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/RateLimitError"
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+security:
+  - BearerAuth: []
+
+paths:
+  # ─── Health ──────────────────────────────────────────────────────────────────
+  /api/health:
+    get:
+      tags: [Health]
+      summary: Service health check
+      security: []
+      responses:
+        "200":
+          description: Service status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  version:
+                    type: string
+                  services:
+                    type: object
+                  websocket:
+                    type: object
+                  security:
+                    type: object
+
+  # ─── Auth ────────────────────────────────────────────────────────────────────
+  /api/auth/register:
+    post:
+      tags: [Auth]
+      summary: Register a new user
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                  format: email
+                  maxLength: 255
+                password:
+                  type: string
+                  minLength: 8
+                  maxLength: 128
+              required: [email, password]
+      responses:
+        "201":
+          description: User registered
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    $ref: "#/components/schemas/User"
+                  token:
+                    type: string
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          description: Email already registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /api/auth/login:
+    post:
+      tags: [Auth]
+      summary: Login with email and password
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  minLength: 1
+              required: [email, password]
+      responses:
+        "200":
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    $ref: "#/components/schemas/User"
+                  token:
+                    type: string
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /api/auth/logout:
+    post:
+      tags: [Auth]
+      summary: Logout current session
+      responses:
+        "200":
+          description: Logged out
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/auth/me:
+    get:
+      tags: [Auth]
+      summary: Get current user profile
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  # ─── Cart ────────────────────────────────────────────────────────────────────
+  /api/cart:
+    get:
+      tags: [Cart]
+      summary: Get user's cart
+      responses:
+        "200":
+          description: Cart contents
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/CartItem"
+                  total:
+                    type: number
+                  itemCount:
+                    type: integer
+
+  /api/cart/sync:
+    post:
+      tags: [Cart]
+      summary: Sync cart items from extension
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                items:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/CartItem"
+                  minItems: 1
+                  maxItems: 500
+              required: [items]
+      responses:
+        "200":
+          description: Cart synced
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/cart/items:
+    post:
+      tags: [Cart]
+      summary: Add item to cart
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CartItem"
+      responses:
+        "201":
+          description: Item added
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/cart/items/{id}:
+    patch:
+      tags: [Cart]
+      summary: Update a cart item
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                quantity:
+                  type: integer
+                  minimum: 0
+                  maximum: 999
+                status:
+                  type: string
+                  enum: [active, watchlist, purchased, removed]
+                notes:
+                  type: string
+                  maxLength: 2000
+                tags:
+                  type: string
+                  maxLength: 500
+                priceAlertThreshold:
+                  type: number
+                  minimum: 0
+      responses:
+        "200":
+          description: Item updated
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [Cart]
+      summary: Remove item from cart
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Item removed
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/cart/items/{id}/watchlist:
+    post:
+      tags: [Cart]
+      summary: Move item to watchlist
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Moved to watchlist
+
+  /api/cart/items/{id}/active:
+    post:
+      tags: [Cart]
+      summary: Move item back to active cart
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Moved to active
+
+  /api/cart/items/{id}/purchased:
+    post:
+      tags: [Cart]
+      summary: Mark item as purchased
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Marked as purchased
+
+  /api/cart/items/{id}/price-history:
+    get:
+      tags: [Cart]
+      summary: Get price history for item
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Price history
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PriceHistory"
+
+  /api/cart/items/{id}/analytics:
+    get:
+      tags: [Cart]
+      summary: Get item analytics (price trends, savings)
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Item analytics
+
+  /api/cart/items/{id}/refresh:
+    post:
+      tags: [Cart]
+      summary: Force refresh item price
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Price refreshed
+
+  /api/cart/settings:
+    patch:
+      tags: [Cart]
+      summary: Update cart settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                autoRefreshInterval:
+                  type: integer
+                  minimum: 60000
+                  maximum: 86400000
+                  description: Auto-refresh interval in milliseconds
+                priceDropThreshold:
+                  type: number
+                  minimum: 0
+                  maximum: 100
+                  description: Percentage drop to trigger notification
+                trackOutOfStock:
+                  type: boolean
+                maxItems:
+                  type: integer
+                  minimum: 1
+                  maximum: 10000
+      responses:
+        "200":
+          description: Settings updated
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  # ─── Checkout ────────────────────────────────────────────────────────────────
+  /api/checkout/start:
+    post:
+      tags: [Checkout]
+      summary: Start automated multi-vendor checkout
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                cart:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                      price:
+                        type: number
+                      sourceUrl:
+                        type: string
+                        format: uri
+                      vendor:
+                        type: string
+                      quantity:
+                        type: integer
+                        default: 1
+                    required: [name, sourceUrl, vendor]
+                  minItems: 1
+                shippingProfileId:
+                  type: string
+                paymentMethodId:
+                  type: string
+                applyPromos:
+                  type: boolean
+                  default: true
+                dryRun:
+                  type: boolean
+                  default: false
+              required: [cart, shippingProfileId, paymentMethodId]
+      responses:
+        "202":
+          description: Checkout job started
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  jobId:
+                    type: string
+                  status:
+                    type: string
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /api/checkout/jobs/{id}:
+    get:
+      tags: [Checkout]
+      summary: Get checkout job status
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Job status
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [Checkout]
+      summary: Cancel checkout job
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Job cancelled
+
+  /api/checkout/profiles/shipping:
+    post:
+      tags: [Checkout]
+      summary: Create shipping profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ShippingProfile"
+      responses:
+        "201":
+          description: Profile created
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/checkout/profiles/shipping/{id}:
+    delete:
+      tags: [Checkout]
+      summary: Delete shipping profile
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Profile deleted
+
+  /api/checkout/profiles/payment:
+    post:
+      tags: [Checkout]
+      summary: Create payment method
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PaymentMethod"
+      responses:
+        "201":
+          description: Payment method created
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/checkout/profiles/payment/{id}:
+    delete:
+      tags: [Checkout]
+      summary: Delete payment method
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Payment method deleted
+
+  # ─── Promos ──────────────────────────────────────────────────────────────────
+  /api/promos/{vendor}:
+    get:
+      tags: [Promos]
+      summary: Get promo codes for a vendor
+      parameters:
+        - $ref: "#/components/parameters/VendorParam"
+      responses:
+        "200":
+          description: Promo codes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    code:
+                      type: string
+                    description:
+                      type: string
+                    source:
+                      type: string
+                    verified:
+                      type: boolean
+    post:
+      tags: [Promos]
+      summary: Submit a promo code
+      parameters:
+        - $ref: "#/components/parameters/VendorParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                code:
+                  type: string
+                  minLength: 1
+                  maxLength: 100
+                description:
+                  type: string
+                  maxLength: 500
+                source:
+                  type: string
+                  maxLength: 100
+              required: [code]
+      responses:
+        "201":
+          description: Promo submitted
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/promos/{vendor}/scan:
+    post:
+      tags: [Promos]
+      summary: Trigger promo code scan for vendor
+      parameters:
+        - $ref: "#/components/parameters/VendorParam"
+      responses:
+        "202":
+          description: Scan started
+
+  # ─── Price Scout ─────────────────────────────────────────────────────────────
+  /api/price-scout/search:
+    post:
+      tags: [PriceScout]
+      summary: Search for price comparisons
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 500
+                price:
+                  type: number
+                  minimum: 0
+                vendor:
+                  type: string
+                universalId:
+                  type: string
+                vendorSku:
+                  type: string
+              required: [name]
+      responses:
+        "200":
+          description: Price comparison results
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/price-scout/batch:
+    post:
+      tags: [PriceScout]
+      summary: Batch price comparison for multiple items
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                items:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                      price:
+                        type: number
+                      vendor:
+                        type: string
+                    required: [name]
+                  minItems: 1
+                  maxItems: 50
+              required: [items]
+      responses:
+        "200":
+          description: Batch results
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  # ─── Deals ───────────────────────────────────────────────────────────────────
+  /api/deals:
+    get:
+      tags: [Deals]
+      summary: Get recent deals
+      responses:
+        "200":
+          description: Deals list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Deal"
+
+  /api/deals/active:
+    get:
+      tags: [Deals]
+      summary: Get currently active deals
+      responses:
+        "200":
+          description: Active deals
+
+  # ─── Notifications ───────────────────────────────────────────────────────────
+  /api/notifications:
+    get:
+      tags: [Notifications]
+      summary: Get user notifications
+      parameters:
+        - name: unread
+          in: query
+          schema:
+            type: string
+            enum: ["true", "false"]
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [price_drop, deal_found, back_in_stock, checkout, system]
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: Notifications
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Notification"
+
+  /api/notifications/{id}/read:
+    post:
+      tags: [Notifications]
+      summary: Mark notification as read
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Marked as read
+
+  /api/notifications/{id}:
+    delete:
+      tags: [Notifications]
+      summary: Delete notification
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Deleted
+
+  /api/notifications/preferences:
+    patch:
+      tags: [Notifications]
+      summary: Update notification preferences
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                priceDrop:
+                  type: boolean
+                dealFound:
+                  type: boolean
+                backInStock:
+                  type: boolean
+                checkout:
+                  type: boolean
+                emailDigest:
+                  type: boolean
+                digestFrequency:
+                  type: string
+                  enum: [daily, weekly, never]
+      responses:
+        "200":
+          description: Preferences updated
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  # ─── Security ────────────────────────────────────────────────────────────────
+  /api/security/audit:
+    get:
+      tags: [Security]
+      summary: Query audit log
+      parameters:
+        - name: type
+          in: query
+          schema:
+            type: string
+            maxLength: 50
+        - name: severity
+          in: query
+          schema:
+            type: string
+            enum: [info, warning, critical]
+        - name: since
+          in: query
+          schema:
+            type: integer
+            description: Unix timestamp ms
+        - name: until
+          in: query
+          schema:
+            type: integer
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 100
+      responses:
+        "200":
+          description: Audit entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AuditEntry"
+
+  /api/security/keys/{service}/rotate:
+    post:
+      tags: [Security]
+      summary: Rotate API key for a service
+      parameters:
+        - name: service
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                newKey:
+                  type: string
+                  maxLength: 500
+      responses:
+        "200":
+          description: Key rotated
+
+  # ─── Analytics ───────────────────────────────────────────────────────────────
+  /api/analytics/savings:
+    get:
+      tags: [Analytics]
+      summary: Get savings summary
+      parameters:
+        - name: period
+          in: query
+          schema:
+            type: string
+            enum: [7d, 30d, 90d, all]
+            default: 30d
+      responses:
+        "200":
+          description: Savings analytics
+
+  /api/analytics/activity:
+    get:
+      tags: [Analytics]
+      summary: Get recent activity feed
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        "200":
+          description: Activity feed

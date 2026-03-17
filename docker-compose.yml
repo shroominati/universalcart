@@ -1,0 +1,100 @@
+# ═══════════════════════════════════════════════════════════════════════
+# UniversalCart — Docker Compose (Dev + Production)
+#
+# Spins up the full stack:
+#   - Backend API + WebSocket server + AI agents
+#   - Playwright Chromium for checkout automation
+#   - SQLite persistent storage (volume-mounted)
+#   - Swagger UI for API docs (dev only)
+#
+# Usage:
+#   cp .env.example .env          # Fill in your API keys
+#   docker compose up -d          # Start production
+#   docker compose --profile dev up -d  # Start with Swagger UI
+#   docker compose logs -f api    # Watch logs
+#   docker compose down           # Stop
+#
+# Data persists in ./data/ on your host machine.
+# ═══════════════════════════════════════════════════════════════════════
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: universalcart-api
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3001}:3001"
+    volumes:
+      # Persist SQLite database across restarts
+      - uc-data:/app/data
+    environment:
+      - NODE_ENV=${NODE_ENV:-production}
+      - PORT=3001
+      - UC_DB_PATH=/app/data/universalcart.db
+
+      # ── Required API Keys ──
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - SERP_API_KEY=${SERP_API_KEY}
+
+      # ── Optional: CAPTCHA Solving ──
+      - TWO_CAPTCHA_KEY=${TWO_CAPTCHA_KEY:-}
+      - CAPSOLVER_KEY=${CAPSOLVER_KEY:-}
+
+      # ── Optional: Proxy Rotation ──
+      - BRIGHTDATA_HOST=${BRIGHTDATA_HOST:-}
+      - BRIGHTDATA_USER=${BRIGHTDATA_USER:-}
+      - BRIGHTDATA_PASS=${BRIGHTDATA_PASS:-}
+      - SMARTPROXY_USER=${SMARTPROXY_USER:-}
+      - SMARTPROXY_PASS=${SMARTPROXY_PASS:-}
+
+      # ── Security ──
+      - UC_VAULT_MASTER_KEY=${UC_VAULT_MASTER_KEY:-}
+      - UC_AUTH_SECRET=${UC_AUTH_SECRET:-}
+      - UC_SIGNING_SECRET=${UC_SIGNING_SECRET:-}
+      - UC_WS_SECRET=${UC_WS_SECRET:-}
+      - UC_AUDIT_SECRET=${UC_AUDIT_SECRET:-}
+      - CORS_ORIGIN=${CORS_ORIGIN:-*}
+
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
+        reservations:
+          cpus: "0.5"
+          memory: 512M
+
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3001/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  # ── Swagger UI (dev profile only) ──────────────────────────────────
+  swagger-ui:
+    image: swaggerapi/swagger-ui:latest
+    container_name: universalcart-docs
+    profiles: ["dev"]
+    ports:
+      - "${SWAGGER_PORT:-8080}:8080"
+    volumes:
+      - ./backend/openapi.yaml:/usr/share/nginx/html/openapi.yaml:ro
+    environment:
+      - SWAGGER_JSON=/usr/share/nginx/html/openapi.yaml
+      - BASE_URL=/
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  uc-data:
+    driver: local
